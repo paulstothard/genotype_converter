@@ -1,0 +1,381 @@
+# genotype_converter
+
+Convert Illumina and Affymetrix SNP chip manifests to standardised format tables,
+then re-encode genotype data files between any supported format encodings.
+
+---
+
+## Overview
+
+**`build`** — takes a SNP chip manifest and a reference genome FASTA, aligns each
+variant's flanking sequence to the reference using minimap2, and writes a set of
+output files that record the chromosomal position and allele encoding for every
+variant.
+
+**`convert`** — takes a genotype data file and the lookup table produced by `build`,
+and rewrites the allele calls from one encoding to another (for example, Illumina
+TOP format to the forward-strand PLUS format used by GWAS pipelines).
+
+---
+
+## Supported format encodings
+
+| Name | Description |
+|---|---|
+| **AB** | Illumina A/B allele coding (A = first allele in manifest, B = second) |
+| **TOP** | Illumina TOP strand |
+| **FORWARD** | Forward (plus) genomic strand |
+| **DESIGN** | Illumina probe design strand |
+| **PLUS** | Forward genomic strand |
+| **VCF** | REF/ALT notation (reported as `REF` or `ALT`) |
+
+---
+
+## Installation
+
+Requires Python ≥ 3.8. The `mappy` package (a Python binding for minimap2)
+compiles a small C extension on install. On macOS, Xcode Command Line Tools are
+required (`xcode-select --install`); on Linux, `gcc` and `zlib-dev`/`zlib-devel`.
+
+### Option A — conda (recommended)
+
+```bash
+conda create -n genotype-converter python=3.12
+conda activate genotype-converter
+
+git clone https://github.com/paulstothard/genotype_converter.git
+cd genotype_converter
+pip install -e .
+```
+
+### Option B — pip + venv
+
+```bash
+git clone https://github.com/paulstothard/genotype_converter.git
+cd genotype_converter
+
+python3 -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -e .
+```
+
+### Verify
+
+```bash
+genotype-converter --help
+```
+
+### Developer install
+
+```bash
+pip install -e ".[dev]"
+pytest tests/ -v
+```
+
+### Optional: Parquet output
+
+```bash
+pip install pyarrow
+```
+
+---
+
+## build
+
+Align a manifest to a reference genome and produce lookup / position / conversion
+files.
+
+```bash
+genotype-converter build \
+  --manifest path/to/manifest.csv \
+  --reference path/to/genome.fa \
+  --outdir output/ \
+  --species cattle
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--manifest` | (required) | Illumina or Affymetrix manifest CSV |
+| `--reference` | (required) | Reference genome FASTA |
+| `--outdir` | `output` | Root output directory |
+| `--species` | `all` | Species name; used as a subdirectory label |
+| `--workers` | 0 (= all cores) | Parallel alignment worker processes |
+| `--align` / `--no-align` | off | Write a detailed alignment display file |
+| `--parquet` / `--no-parquet` | off | Also write `lookup.parquet` (requires pyarrow) |
+
+### Output files
+
+All files land in `<outdir>/<species>/<ref_stem>/`:
+
+| File | Description |
+|---|---|
+| `*.lookup.csv` | **Primary distributable.** One row per variant; columns named `A_in_TOP`, `B_in_PLUS`, etc. |
+| `*.position.csv` | Chromosome, 1-based position, VCF REF/ALT per variant. |
+| `*.conversion.csv` | Two rows per variant (one for allele A, one for allele B) with all format encodings. |
+| `*.wide.csv` | All of the above in one row per variant. |
+| `*.summary.txt` | Marker counts by type, alignment success rate, SHA-256 checksums, per-chromosome distribution. |
+| `*.alignment.txt` | Alignment display per variant (`--align` flag). |
+| `*.lookup.parquet` | Binary version of `lookup.csv` (`--parquet` flag). |
+
+### Build summary
+
+Example `*.summary.txt`:
+
+```
+genotype_converter build summary
+==================================================
+Generated:  Friday May 01 14:22:33 2026
+
+Input files
+-----------
+Manifest:   /data/bovine_snp50.csv
+  SHA256:   3a7f9c2d…
+Reference:  /data/ARS-UCD1.2.fa
+  SHA256:   c891a04f…
+
+Run parameters
+--------------
+Species:    cattle
+Workers:    8
+
+Marker counts
+-------------
+Total:      54609
+  SNPs:     54547  (99.9%)
+  Indels:   62  (0.1%)
+  By manifest type:
+    Illumina: 54609  (100.0%)
+
+Alignment results
+-----------------
+Positioned:     54423  (99.7%)
+Not positioned: 186  (0.3%)
+
+Per-chromosome marker counts
+---------------------------
+  1                    3541
+  2                    3042
+  ...
+
+Output files
+------------
+  output/cattle/ARS-UCD1_2/bovine_snp50.ARS-UCD1_2.position.csv
+  output/cattle/ARS-UCD1_2/bovine_snp50.ARS-UCD1_2.lookup.csv
+  ...
+```
+
+---
+
+## convert
+
+Re-encode a genotype data file from one format to another using the lookup table
+produced by `build`.
+
+```bash
+genotype-converter convert \
+  --genotypes mydata.csv \
+  --lookup output/cattle/genome/manifest.genome.lookup.csv \
+  --from-format TOP \
+  --to-format PLUS \
+  --output converted.csv
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--genotypes` | (required) | Input genotype CSV |
+| `--lookup` | (required) | Lookup CSV from `build` |
+| `--from-format` | (required) | Input encoding: `AB`, `TOP`, `FORWARD`, `DESIGN`, `PLUS`, `VCF` |
+| `--to-format` | (required) | Output encoding |
+| `--output` | (required) | Output file path |
+| `--layout` | `wide` | `wide` (samples × markers) or `long` (one row per sample × marker) |
+| `--in-sep` | auto | Allele separator in input (auto-detects `/`, space, or adjacent characters) |
+| `--out-sep` | `/` | Allele separator in output |
+| `--sample-col` | `sample_id` | Column name identifying the sample |
+| `--marker-col` | `marker_name` | Column name for the marker (long layout only) |
+| `--genotype-col` | `genotype` | Column name for the genotype call (long layout only) |
+
+### Input file layouts
+
+**Wide** (default): one row per sample, one column per marker.
+
+```
+sample_id,SNP1,SNP2,SNP3
+SAMPLE001,A/A,C/T,G/G
+SAMPLE002,A/G,T/T,A/G
+```
+
+**Long**: one row per (sample × marker).
+
+```
+sample_id,marker_name,genotype
+SAMPLE001,SNP1,A/A
+SAMPLE001,SNP2,C/T
+```
+
+Missing genotype codes (`0`, `00`, `NA`, `N/A`, `--`, `.`) are passed through
+unchanged.
+
+---
+
+## End-to-end example
+
+This example uses the test data bundled in `tests/data/`.
+
+### Step 1: build the lookup table
+
+```bash
+genotype-converter build \
+  --manifest tests/data/manifest.csv \
+  --reference tests/data/reference.fa \
+  --outdir output/ \
+  --species test
+```
+
+Output:
+
+```
+Build complete: 8 markers (5 SNPs, 3 indels), 8 positioned, 0 not positioned.
+Full summary: output/test/reference/manifest.reference.summary.txt
+```
+
+Files written to `output/test/reference/`:
+
+```
+manifest.reference.lookup.csv
+manifest.reference.position.csv
+manifest.reference.conversion.csv
+manifest.reference.wide.csv
+manifest.reference.summary.txt
+```
+
+### Step 2: inspect the lookup table
+
+Each row is one variant. Column names are self-describing:
+
+```
+marker_name,alt_marker_name,chromosome,position,ref_allele,alt_allele,
+A_in_AB,B_in_AB,A_in_TOP,B_in_TOP,A_in_FORWARD,B_in_FORWARD,
+A_in_DESIGN,B_in_DESIGN,A_in_PLUS,B_in_PLUS,A_vcf,B_vcf
+SNP1,SNP1-0_T_F_1511658221,1,300,A,G,A,B,A,G,A,G,A,G,A,G,REF,ALT
+SNP2,SNP2-0_B_F_2328966441,1,700,T,G,A,B,A,C,T,G,T,G,T,G,REF,ALT
+```
+
+### Step 3: re-encode a genotype file from TOP to PLUS
+
+Create `mydata.csv`:
+
+```
+sample_id,SNP1,SNP2,SNP3,SNP4,SNP5
+SAMPLE001,A/A,A/C,A/C,A/A,A/A
+SAMPLE002,A/G,A/A,C/C,A/G,A/C
+SAMPLE003,G/G,C/C,A/C,G/G,C/C
+```
+
+```bash
+genotype-converter convert \
+  --genotypes mydata.csv \
+  --lookup output/test/reference/manifest.reference.lookup.csv \
+  --from-format TOP \
+  --to-format PLUS \
+  --output mydata_plus.csv
+```
+
+### Step 4: re-encode from AB notation
+
+```bash
+genotype-converter convert \
+  --genotypes mydata_ab.csv \
+  --lookup output/test/reference/manifest.reference.lookup.csv \
+  --from-format AB \
+  --to-format FORWARD \
+  --output mydata_forward.csv
+```
+
+### Long-format input
+
+```bash
+genotype-converter convert \
+  --genotypes mydata_long.csv \
+  --lookup output/test/reference/manifest.reference.lookup.csv \
+  --from-format TOP \
+  --to-format PLUS \
+  --layout long \
+  --output mydata_long_plus.csv
+```
+
+---
+
+## How it works
+
+1. **Query preparation.** The flanking sequence from the manifest
+   (e.g. `AAACCC[A/G]TTTGGG`) has existing N bases stripped, the variant
+   bracket replaced with a single `N`, and non-GATCN characters removed.
+   The result is the minimap2 query.
+
+2. **Alignment.** The query is aligned to the reference with minimap2
+   (`sr` preset, up to 5 hits). When multiple hits are returned, the hit with
+   the highest mapping quality is used.
+
+3. **Position recovery.** The position of `N` in the query is mapped to a
+   reference position by walking the CIGAR string. Insertions and deletions in
+   the flanking relative to the reference are handled correctly.
+
+4. **VCF REF/ALT.** For SNPs, the reference base at the variant position
+   determines which allele is REF and which is ALT. For indels, an anchor-based
+   VCF representation is computed: the anchor base (one before the indel site)
+   is prepended to both REF and ALT alleles.
+
+5. **Format encoding.** Strand relationships (TOP/BOT, FORWARD, DESIGN, PLUS)
+   are derived from the manifest's `IlmnStrand`, `SourceStrand`, and `IlmnID`
+   fields. Affymetrix alleles are on the forward strand by definition.
+
+---
+
+## Performance
+
+Typical runtimes on a modern server (8+ cores):
+
+| Panel size | Approx. time |
+|---|---|
+| 50K SNPs (Bovine SNP50) | ~2 min |
+| 150K SNPs (Bovine HD) | ~5 min |
+| 800K SNPs (high-density panels) | ~20–30 min |
+
+---
+
+## Citation
+
+If you use genotype_converter in your research, please cite:
+
+Grant JR, Herman EK, Barlow LD, Miglior F, Schenkel FS, Baes CF, Stothard P.
+A large structural variant collection in Holstein cattle and associated database
+for variant discovery, characterization, and application. BMC Genomics.
+2024;25(1):903. doi: 10.1186/s12864-024-10812-2. PMID: 39350025.
+
+<details>
+<summary>BibTeX</summary>
+
+```bibtex
+@article{Grant2024LargeStructuralVariant,
+  author  = {Grant, Jason R and Herman, Emily K and Barlow, Lael D and
+             Miglior, Filippo and Schenkel, Flavio S and Baes, Christine F and
+             Stothard, Paul},
+  title   = {A large structural variant collection in {Holstein} cattle and
+             associated database for variant discovery, characterization, and application},
+  journal = {BMC Genomics},
+  year    = {2024},
+  volume  = {25},
+  number  = {1},
+  pages   = {903},
+  doi     = {10.1186/s12864-024-10812-2},
+  pmid    = {39350025}
+}
+```
+
+</details>
+
+---
+
+## License
+
+MIT
