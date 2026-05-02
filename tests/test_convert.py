@@ -234,6 +234,7 @@ def test_lookup_csv_has_correct_columns(pipeline_output):
     reader = csv.DictReader(lines)
     row = next(reader)
     for col in ["marker_name", "chromosome", "position", "ref_allele",
+                "determination_type",
                 "A_in_TOP", "B_in_TOP", "A_in_PLUS", "B_in_PLUS"]:
         assert col in row, f"Missing column: {col}"
 
@@ -245,6 +246,7 @@ def test_lookup_snp1_values(pipeline_output):
     assert rows["SNP1"]["chromosome"] == "1"
     assert rows["SNP1"]["position"] == "300"
     assert rows["SNP1"]["ref_allele"] == "A"
+    assert rows["SNP1"]["determination_type"]
     assert rows["SNP1"]["A_in_AB"] == "A"
     assert rows["SNP1"]["B_in_AB"] == "B"
     assert rows["SNP1"]["A_in_TOP"] == "A"

@@ -92,6 +92,45 @@ Start with these checks:
 Expected differences should be recorded in `reports/`, including the command
 used, date, input file checksums, and a short explanation.
 
+For Illumina SNPs, pay special attention to gap-adjacent probe matches. Some
+`AlleleA_ProbeSeq` and `AlleleB_ProbeSeq` values stop next to the assayed base;
+others include the assayed allele as the terminal probe base. For adjacent
+probes, a left-side probe reports the first reference base immediately after the
+probe, and a right-side probe reports the first reference base immediately
+before the probe. For allele-including probes, the reported SNP position is the
+matching allele base in the probe itself. In local gaps or short repeats, this
+probe-derived base can differ from the coordinate obtained by mapping the
+synthetic `N` character directly through the CIGAR string.
+
+The synthetic `N` that marks the assayed site is tracked separately from real
+flanking `N` bases. Real flanking `N`s should remain in the minimap2 query so
+the aligned sequence length and spacing reflect the manifest rather than an
+artificially shortened sequence.
+
+When the probe can be placed uniquely on the selected reference neighborhood,
+that reference-side probe placement defines the assayed base. The direct
+CIGAR-mapped position of the synthetic `N` is useful as a check, but it should
+not overrule a clear probe placement. If only query-side probe placement is
+available and it differs from direct CIGAR mapping, the pipeline uses the
+manifest alleles as a conservative tie-breaker only when exactly one candidate
+reference base matches those alleles. If both candidates match, or neither
+candidate matches, the probe-derived position is retained and the site is
+classified as ambiguous. Build summaries include alignment determination counts
+such as `SNP_PROBE_ADJACENT`, `SNP_ALLELE_ASSISTED`, and `SNP_AMBIGUOUS`.
+
+For SNPs with a CIGAR gap near the tracked assayed site, the pipeline performs a
+short local realignment against the selected reference window before applying
+the probe-adjacent and allele-assisted rules. This refinement is intended for
+small gap/repeat placement differences and should not be expected to resolve
+different-chromosome or far-distance alignment disagreements.
+
+The build outputs include a `determination_type` column in `position.csv`,
+`wide.csv`, `lookup.csv`, and optional `lookup.parquet`. Use this column to
+filter markers for QC. In the bovine HD validation panel, the remaining nearby
+old/new position discrepancies are usually gap-adjacent: a scan after the
+probe-orientation fixes found 150 of 165 close discrepancies had a CIGAR
+insertion/deletion near the tracked assayed site in the selected alignment.
+
 The helper script compares the current bovine HD validation files:
 
 ```bash

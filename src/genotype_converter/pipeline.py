@@ -60,6 +60,12 @@ class _Progress:
             sys.stderr.flush()
 
 
+def _progress_message(enabled: bool, message: str) -> None:
+    if enabled:
+        sys.stderr.write(message + "\n")
+        sys.stderr.flush()
+
+
 def _sha256(path: str) -> str:
     h = hashlib.sha256()
     with open(path, "rb") as f:
@@ -78,7 +84,11 @@ def _align_records(
     tracker = _Progress(len(records), "Aligning variants", progress)
     try:
         if workers == 1:
-            aligner = VariantAligner(reference_path, save_alignment=save_alignment)
+            aligner = VariantAligner(
+                reference_path,
+                save_alignment=save_alignment,
+                progress=progress,
+            )
             alignments = []
             for record in records:
                 alignments.append(aligner.align(record))
@@ -89,7 +99,7 @@ def _align_records(
         with multiprocessing.Pool(
             workers,
             initializer=_init_worker,
-            initargs=(reference_path, save_alignment),
+            initargs=(reference_path, save_alignment, progress),
         ) as pool:
             alignments = []
             for alignment in pool.imap(_align_record, records, chunksize=chunksize):
@@ -113,18 +123,24 @@ def run(
     if workers < 1:
         workers = 1
 
+    _progress_message(progress, f"Hashing manifest: {manifest_path}")
     manifest_sha = _sha256(manifest_path)
+    _progress_message(progress, f"Hashing reference: {reference_path}")
     reference_sha = _sha256(reference_path)
 
     ref_name = Path(reference_path).stem.replace(".", "_")
     panel_name = Path(manifest_path).stem.replace(".", "_")
     output_name = f"{panel_name}.{ref_name}"
     out_dir = Path(outdir) / species / ref_name
+    _progress_message(progress, f"Preparing output directory: {out_dir}")
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    _progress_message(progress, f"Parsing manifest: {manifest_path}")
     records = parse_manifest(manifest_path)
+    _progress_message(progress, f"Loaded {len(records)} markers")
     alignments = _align_records(records, reference_path, workers, save_alignment, progress)
 
+    _progress_message(progress, "Computing conversions")
     results = [compute_conversion(r, a) for r, a in zip(records, alignments)]
 
     info = [
@@ -141,18 +157,24 @@ def run(
     path_lookup = str(out_dir / f"{output_name}.lookup.csv")
     path_summary = str(out_dir / f"{output_name}.summary.txt")
 
+    _progress_message(progress, f"Writing position file: {path_position}")
     write_position(results, path_position, info)
+    _progress_message(progress, f"Writing conversion file: {path_conversion}")
     write_conversion(results, path_conversion, info)
+    _progress_message(progress, f"Writing wide file: {path_wide}")
     write_wide(results, path_wide, info)
+    _progress_message(progress, f"Writing lookup file: {path_lookup}")
     write_lookup(results, path_lookup, info)
     output_files += [path_position, path_conversion, path_wide, path_lookup]
 
     if save_alignment:
         path_aln = str(out_dir / f"{output_name}.alignment.txt")
+        _progress_message(progress, f"Writing alignment file: {path_aln}")
         write_alignment(results, path_aln, info)
         output_files.append(path_aln)
     if save_parquet:
         path_parquet = str(out_dir / f"{output_name}.lookup.parquet")
+        _progress_message(progress, f"Writing Parquet lookup file: {path_parquet}")
         write_lookup_parquet(results, path_parquet, info)
         output_files.append(path_parquet)
 
@@ -162,6 +184,9 @@ def run(
     )
 
     by_type: Counter = Counter(r.manifest_type for r in records)
+    by_determination_type: Counter = Counter(
+        a.determination_type.name for a in alignments if a.determination_type is not None
+    )
 
     stats = BuildStats(
         manifest_path=str(Path(manifest_path).resolve()),
@@ -177,9 +202,11 @@ def run(
         n_positioned=n_positioned,
         n_not_positioned=len(alignments) - n_positioned,
         by_chromosome=dict(by_chromosome),
+        by_determination_type=dict(by_determination_type),
         output_files=output_files + [path_summary],
     )
 
+    _progress_message(progress, f"Writing summary: {path_summary}")
     write_summary(stats, path_summary)
 
     return stats

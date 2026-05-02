@@ -90,6 +90,70 @@ def _write_mismatches(path: Path, rows: list[dict[str, str]]) -> None:
         writer.writerows(rows)
 
 
+def _value_state(old_value: str, new_value: str) -> str:
+    if old_value and new_value:
+        return "old_set/new_set"
+    if old_value:
+        return "old_set/new_blank"
+    if new_value:
+        return "old_blank/new_set"
+    return "old_blank/new_blank"
+
+
+def _position_breakdown(
+    old_position: dict[str, dict[str, str]],
+    new_position: dict[str, dict[str, str]],
+    mismatches: list[dict[str, str]],
+) -> list[str]:
+    mismatch_markers = {row["marker_name"] for row in mismatches}
+    state_counts: Counter = Counter()
+    position_deltas: Counter = Counter()
+    ref_alt_swaps = 0
+
+    for row in mismatches:
+        state_counts[_value_state(row["old_value"], row["new_value"])] += 1
+        if row["column"] != "position":
+            continue
+        try:
+            delta = int(row["new_value"]) - int(row["old_value"])
+        except ValueError:
+            continue
+        position_deltas[delta] += 1
+
+    for marker in mismatch_markers:
+        old_row = old_position.get(marker, {})
+        new_row = new_position.get(marker, {})
+        if (
+            _clean(old_row.get("VCF_REF"))
+            and _clean(old_row.get("VCF_ALT"))
+            and _clean(old_row.get("VCF_REF")) == _clean(new_row.get("VCF_ALT"))
+            and _clean(old_row.get("VCF_ALT")) == _clean(new_row.get("VCF_REF"))
+        ):
+            ref_alt_swaps += 1
+
+    return [
+        f"- Markers with any position-output mismatch: {len(mismatch_markers)}",
+        f"- Value-state counts: {dict(state_counts)}",
+        f"- Position deltas, new minus old: {dict(position_deltas.most_common(10))}",
+        f"- Markers with old/new VCF REF/ALT swapped: {ref_alt_swaps}",
+    ]
+
+
+def _conversion_breakdown(mismatches: list[dict[str, str]]) -> list[str]:
+    mismatch_markers = {row["marker_name"] for row in mismatches}
+    state_counts: Counter = Counter(
+        _value_state(row["old_value"], row["new_value"]) for row in mismatches
+    )
+    marker_column_counts: Counter = Counter(
+        row["column"] for row in mismatches if row["column"] in {"PLUS", "VCF"}
+    )
+    return [
+        f"- Markers with any conversion-output mismatch: {len(mismatch_markers)}",
+        f"- Value-state counts: {dict(state_counts)}",
+        f"- PLUS/VCF mismatch counts: {dict(marker_column_counts)}",
+    ]
+
+
 def _sample_keys(keys: set, limit: int = 20) -> str:
     if not keys:
         return "None"
@@ -126,6 +190,8 @@ def main() -> None:
     conv_mismatch_path = args.report_dir / "conversion_mismatches.csv"
     _write_mismatches(pos_mismatch_path, pos_mismatches)
     _write_mismatches(conv_mismatch_path, conv_mismatches)
+    pos_breakdown = _position_breakdown(old_position, new_position, pos_mismatches)
+    conv_breakdown = _conversion_breakdown(conv_mismatches)
 
     report = args.report_dir / "comparison_summary.md"
     report.write_text(
@@ -151,6 +217,10 @@ def main() -> None:
             f"- Extra sample: {_sample_keys(pos_extra)}",
             f"- Mismatch details: `{pos_mismatch_path}`",
             "",
+            "### Position Breakdown",
+            "",
+            *pos_breakdown,
+            "",
             "## Conversion Output",
             "",
             f"- Old marker/AB rows: {len(old_conversion)}",
@@ -162,6 +232,10 @@ def main() -> None:
             f"- Missing sample: {_sample_keys(conv_missing)}",
             f"- Extra sample: {_sample_keys(conv_extra)}",
             f"- Mismatch details: `{conv_mismatch_path}`",
+            "",
+            "### Conversion Breakdown",
+            "",
+            *conv_breakdown,
             "",
         ]) + "\n",
         encoding="utf-8",

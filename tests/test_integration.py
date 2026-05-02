@@ -37,6 +37,7 @@ def test_position_matches_expected(pipeline_output):
         assert row["position"] == pos, f"{name} position mismatch: got {row['position']}"
         assert row["VCF_REF"] == ref, f"{name} VCF_REF mismatch: got {row['VCF_REF']!r}"
         assert row["VCF_ALT"] == alt, f"{name} VCF_ALT mismatch: got {row['VCF_ALT']!r}"
+        assert row["determination_type"], f"{name} missing determination_type"
 
 
 def test_conversion_matches_expected(pipeline_output):

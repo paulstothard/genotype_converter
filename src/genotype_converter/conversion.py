@@ -34,6 +34,7 @@ class VariantResult:
     vcf_a: Optional[str]
     vcf_b: Optional[str]
     # Debug
+    determination_type: Optional[str]
     alignment_text: Optional[str]
     is_indel: bool
 
@@ -189,6 +190,9 @@ def compute_conversion(record: ManifestRecord, aln: AlignmentResult) -> VariantR
         vcf_alt=aln.vcf_alt,
         vcf_a=vcf_a,
         vcf_b=vcf_b,
+        determination_type=(
+            aln.determination_type.name if aln.determination_type is not None else None
+        ),
         alignment_text=aln.alignment_text,
         is_indel=record.is_indel,
         **fields,

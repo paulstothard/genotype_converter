@@ -44,8 +44,8 @@ required (`xcode-select --install`); on Linux, `gcc` and `zlib-dev`/`zlib-devel`
 ### Option A — conda (recommended)
 
 ```bash
-conda create -n genotype-converter python=3.12
-conda activate genotype-converter
+conda create -n genotype-converter-env python=3.12
+conda activate genotype-converter-env
 
 git clone https://github.com/paulstothard/genotype_converter.git
 cd genotype_converter
@@ -81,6 +81,10 @@ pytest tests/ -v
 ```bash
 pip install pyarrow
 ```
+
+### Development plan
+
+For planned features and design notes, see [Development Plan](docs/development-plan.md).
 
 ---
 
@@ -118,8 +122,8 @@ All files land in `<outdir>/<species>/<ref_stem>/`:
 
 | File | Description |
 |---|---|
-| `*.lookup.csv` | **Primary distributable.** One row per variant; columns named `A_in_TOP`, `B_in_PLUS`, etc. |
-| `*.position.csv` | Chromosome, 1-based position, VCF REF/ALT per variant. |
+| `*.lookup.csv` | **Primary distributable.** One row per variant; columns named `A_in_TOP`, `B_in_PLUS`, etc., plus `determination_type` for QC. |
+| `*.position.csv` | Chromosome, 1-based position, VCF REF/ALT, and `determination_type` per variant. |
 | `*.conversion.csv` | Two rows per variant (one for allele A, one for allele B) with all format encodings. |
 | `*.wide.csv` | All of the above in one row per variant. |
 | `*.summary.txt` | Marker counts by type, alignment success rate, SHA-256 checksums, per-chromosome distribution. |
@@ -325,17 +329,32 @@ genotype-converter convert \
 ## How it works
 
 1. **Query preparation.** The flanking sequence from the manifest
-   (e.g. `AAACCC[A/G]TTTGGG`) has existing N bases stripped, the variant
-   bracket replaced with a single `N`, and non-GATCN characters removed.
-   The result is the minimap2 query.
+   (e.g. `AAACCC[A/G]TTTGGG`) has the variant bracket replaced with a
+   tracked synthetic `N`, and non-GATCN characters are removed. Existing
+   flanking `N` bases are preserved because they are part of the manifest's
+   sequence context. The result is the minimap2 query.
 
 2. **Alignment.** The query is aligned to the reference with minimap2
    (`sr` preset, up to 5 hits). When multiple hits are returned, the hit with
    the highest mapping quality is used.
 
-3. **Position recovery.** The position of `N` in the query is mapped to a
-   reference position by walking the CIGAR string. Insertions and deletions in
-   the flanking relative to the reference are handled correctly.
+3. **Position recovery.** For Illumina SNPs with probe sequences, the probe is
+   matched to the left or right side of the aligned flanking sequence. Some
+   probes stop next to the assayed base; others include the assayed allele as
+   the terminal probe base. The reported SNP position is the reference base
+   implied by that probe placement: the base immediately after a left-side
+   adjacent probe, immediately before a right-side adjacent probe, or the
+   allele-including probe base itself. This keeps gap-adjacent SNPs tied to the
+   assayed probe context. If probe placement cannot be determined, the position
+   of `N` in the query is mapped by walking the CIGAR string. When the
+   probe-derived base is found by a unique probe match in the selected
+   reference neighborhood, that probe placement defines the assayed base. If
+   only query-side probe placement is available and it differs from direct
+   CIGAR mapping, the manifest alleles are used only if exactly one candidate
+   base matches those alleles; otherwise the probe-derived position is kept and
+   the site is counted as ambiguous in the build summary. For SNPs with a CIGAR
+   gap near the assayed site, a short reference window around the minimap2 hit
+   is locally realigned before applying the probe and allele rules.
 
 4. **VCF REF/ALT.** For SNPs, the reference base at the variant position
    determines which allele is REF and which is ALT. For indels, an anchor-based

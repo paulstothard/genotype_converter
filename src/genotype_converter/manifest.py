@@ -32,6 +32,8 @@ class ManifestRecord:
     ilmn_strand: Optional[IllmnStrand] = None
     source_strand: Optional[IllmnStrand] = None
     ilmn_id_tbpm_fru: Optional[str] = None
+    allele_a_probe_seq: Optional[str] = None
+    allele_b_probe_seq: Optional[str] = None
 
     @property
     def is_snp(self) -> bool:
@@ -165,6 +167,8 @@ def _parse_illumina_rows(rows: list[dict]) -> list[ManifestRecord]:
                 ilmn_strand=ilmn_strand,
                 source_strand=source_strand,
                 ilmn_id_tbpm_fru=tbpm_fru,
+                allele_a_probe_seq=row.get("AlleleA_ProbeSeq"),
+                allele_b_probe_seq=row.get("AlleleB_ProbeSeq"),
             )
         )
     return records

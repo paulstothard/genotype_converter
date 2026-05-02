@@ -25,6 +25,7 @@ class BuildStats:
     n_positioned: int = 0
     n_not_positioned: int = 0
     by_chromosome: dict = field(default_factory=dict)
+    by_determination_type: dict = field(default_factory=dict)
     output_files: list = field(default_factory=list)
 
 
@@ -55,12 +56,15 @@ def write_position(
         for line in _header_lines(info, "Variant position file"):
             f.write(line + "\n")
         w = csv.writer(f)
-        w.writerow(["marker_name", "alt_marker_name", "chromosome", "position", "VCF_REF", "VCF_ALT"])
+        w.writerow([
+            "marker_name", "alt_marker_name", "chromosome", "position",
+            "VCF_REF", "VCF_ALT", "determination_type",
+        ])
         for r in results:
             w.writerow([
                 _val(r.name), _val(r.alt_name),
                 _val(r.chromosome), _val(str(r.position) if r.position else ""),
-                _val(r.vcf_ref), _val(r.vcf_alt),
+                _val(r.vcf_ref), _val(r.vcf_alt), _val(r.determination_type),
             ])
 
 
@@ -100,7 +104,7 @@ def write_wide(
         w = csv.writer(f)
         w.writerow([
             "marker_name", "alt_marker_name", "chromosome", "position",
-            "VCF_REF", "VCF_ALT",
+            "VCF_REF", "VCF_ALT", "determination_type",
             "AB_A", "AB_B", "TOP_A", "TOP_B",
             "FORWARD_A", "FORWARD_B", "DESIGN_A", "DESIGN_B",
             "PLUS_A", "PLUS_B", "VCF_A", "VCF_B",
@@ -109,7 +113,7 @@ def write_wide(
             w.writerow([
                 _val(r.name), _val(r.alt_name),
                 _val(r.chromosome), _val(str(r.position) if r.position else ""),
-                _val(r.vcf_ref), _val(r.vcf_alt),
+                _val(r.vcf_ref), _val(r.vcf_alt), _val(r.determination_type),
                 "A", "B",
                 _val(r.top_a), _val(r.top_b),
                 _val(r.forward_a), _val(r.forward_b),
@@ -159,6 +163,7 @@ def write_lookup(
         f.write(
             "# Columns: marker_name, alt_marker_name, chromosome, position (1-based),\n"
             "#   ref_allele (VCF REF), alt_allele (VCF ALT),\n"
+            "#   determination_type = how the marker position/alleles were resolved,\n"
             "#   A_in_<FORMAT> = allele code/value for allele A in that format encoding,\n"
             "#   B_in_<FORMAT> = allele code/value for allele B in that format encoding,\n"
             "#   A_vcf / B_vcf = whether allele A/B is REF or ALT in VCF notation.\n"
@@ -168,7 +173,7 @@ def write_lookup(
         w = csv.writer(f)
         w.writerow([
             "marker_name", "alt_marker_name", "chromosome", "position",
-            "ref_allele", "alt_allele",
+            "ref_allele", "alt_allele", "determination_type",
             "A_in_AB", "B_in_AB",
             "A_in_TOP", "B_in_TOP",
             "A_in_FORWARD", "B_in_FORWARD",
@@ -181,7 +186,7 @@ def write_lookup(
                 _val(r.name), _val(r.alt_name),
                 _val(r.chromosome),
                 _val(str(r.position) if r.position else ""),
-                _val(r.vcf_ref), _val(r.vcf_alt),
+                _val(r.vcf_ref), _val(r.vcf_alt), _val(r.determination_type),
                 "A", "B",
                 _val(r.top_a), _val(r.top_b),
                 _val(r.forward_a), _val(r.forward_b),
@@ -214,6 +219,7 @@ def write_lookup_parquet(
             "position": r.position,
             "ref_allele": _val(r.vcf_ref),
             "alt_allele": _val(r.vcf_alt),
+            "determination_type": _val(r.determination_type),
             "A_in_AB": "A",
             "B_in_AB": "B",
             "A_in_TOP": _val(r.top_a),
@@ -289,6 +295,10 @@ def write_summary(stats: BuildStats, path: str) -> None:
             key=lambda x: (x[0].lstrip("chr").zfill(20)),
         ):
             lines.append(f"  {chrom:<20} {count}")
+    if stats.by_determination_type:
+        lines += ["", "Alignment determination counts", "------------------------------"]
+        for dtype, count in sorted(stats.by_determination_type.items()):
+            lines.append(f"  {dtype:<28} {count}")
     lines += ["", "Output files", "------------"]
     for f in stats.output_files:
         lines.append(f"  {f}")
