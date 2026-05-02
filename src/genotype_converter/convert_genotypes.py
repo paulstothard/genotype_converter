@@ -69,6 +69,9 @@ def load_lookup_table(lookup_path: str) -> dict:
                 continue
             row_a: dict = {"AB": "A"}
             row_b: dict = {"AB": "B"}
+            for key in ("chromosome", "position"):
+                row_a[key] = row.get(key, "")
+                row_b[key] = row.get(key, "")
             for fmt in ("TOP", "FORWARD", "DESIGN", "PLUS"):
                 row_a[fmt] = row.get(f"A_in_{fmt}", "")
                 row_b[fmt] = row.get(f"B_in_{fmt}", "")

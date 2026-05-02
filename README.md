@@ -178,7 +178,20 @@ Output files
 ## convert
 
 Re-encode a genotype data file from one format to another using the lookup table
-produced by `build`.
+produced by `build`. For complete format details and before/after examples, see
+[Genotype Input and Output Formats](docs/genotype-formats.md).
+
+Supported genotype file layouts:
+
+| Command | Input | Output | Notes |
+|---|---|---|---|
+| `convert --layout wide` | CSV, one sample per row and one marker per column | CSV | Best for small datasets, examples, and debugging. |
+| `convert --layout long` | CSV, one sample-marker genotype per row | CSV | Useful for database-style genotype tables. |
+| `convert-plink` | PLINK 1 binary fileset: `.bed`, `.bim`, `.fam` | PLINK 1 binary fileset | Rewrites allele labels in `.bim`; copies `.bed` and `.fam` unchanged. |
+| `convert-pfile` | PLINK 2 fileset: `.pgen`, `.pvar`, `.psam` | PLINK 2 fileset | Rewrites biallelic `REF`/`ALT` labels in `.pvar`; copies `.pgen` and `.psam` unchanged. |
+
+PLINK text formats such as `.ped/.map` are not converted directly. Convert them
+to PLINK binary with PLINK first, then use `convert-plink` or `convert-pfile`.
 
 ```bash
 genotype-converter convert \
@@ -189,47 +202,27 @@ genotype-converter convert \
   --output converted.csv
 ```
 
-| Flag | Default | Description |
-|---|---|---|
-| `--genotypes` | (required) | Input genotype CSV |
-| `--lookup` | (required) | Lookup CSV from `build` |
-| `--from-format` | (required) | Input encoding: `AB`, `TOP`, `FORWARD`, `DESIGN`, `PLUS`, `VCF` |
-| `--to-format` | (required) | Output encoding |
-| `--output` | (required) | Output file path |
-| `--layout` | `wide` | `wide` (samples × markers) or `long` (one row per sample × marker) |
-| `--in-sep` | auto | Allele separator in input (auto-detects `/`, space, or adjacent characters) |
-| `--out-sep` | `/` | Allele separator in output |
-| `--sample-col` | `sample_id` | Column name identifying the sample |
-| `--marker-col` | `marker_name` | Column name for the marker (long layout only) |
-| `--genotype-col` | `genotype` | Column name for the genotype call (long layout only) |
+### PLINK 1 binary
 
-### Input file layouts
-
-**Wide** (default): one row per sample, one column per marker.
-
-```
-sample_id,SNP1,SNP2,SNP3
-SAMPLE001,A/A,C/T,G/G
-SAMPLE002,A/G,T/T,A/G
+```bash
+genotype-converter convert-plink \
+  --bfile mydata_top \
+  --lookup output/cattle/genome/manifest.genome.lookup.csv \
+  --from-format TOP \
+  --to-format PLUS \
+  --out mydata_plus
 ```
 
-**Long**: one row per (sample × marker).
+### PLINK 2 p-files
 
+```bash
+genotype-converter convert-pfile \
+  --pfile mydata_top \
+  --lookup output/cattle/genome/manifest.genome.lookup.csv \
+  --from-format TOP \
+  --to-format PLUS \
+  --out mydata_plus
 ```
-sample_id,marker_name,genotype
-SAMPLE001,SNP1,A/A
-SAMPLE001,SNP2,C/T
-```
-
-Missing genotype codes (`0`, `00`, `NA`, `N/A`, `--`, `.`) are passed through
-unchanged.
-
-The converter now treats marker names and required columns as part of the input
-contract. Wide files must contain the sample column plus marker columns present
-in the lookup table. Long files must contain the sample, marker, and genotype
-columns, and all marker names in the marker column must exist in the lookup
-table. Missing columns, unknown markers, unrecognised lookup files, and
-unrecognised manifests raise clear errors instead of producing partial output.
 
 ---
 
