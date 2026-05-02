@@ -31,6 +31,16 @@ def test_snp1_aligns_plus_strand(manifest_path, reference_path):
     assert result.strand == GenomicStrand.PLUS
     assert result.vcf_ref == "A"
     assert result.vcf_alt == "G"
+    assert result.alignment_text is None
+
+
+def test_alignment_text_is_optional(manifest_path, reference_path):
+    records = parse_manifest(manifest_path)
+    snp1 = next(r for r in records if r.name == "SNP1")
+    aligner = VariantAligner(reference_path, save_alignment=True)
+    result = aligner.align(snp1)
+    assert result.alignment_text is not None
+    assert "Determination type:" in result.alignment_text
 
 
 def test_snp2_position(manifest_path, reference_path):

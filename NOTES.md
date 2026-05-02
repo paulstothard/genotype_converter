@@ -172,6 +172,9 @@ kept but not flagged. A future improvement would be to report them as uncertain.
 
 ## Environment
 - Developed/tested with: conda env `python-env` (Python 3.12)
+- Release prep: create and validate a project-specific conda env named
+  `genotype-converter`, then update docs/commands away from the generic
+  `python-env` name.
 - Runtime deps: `mappy>=2.24`, `click>=8.0`
 - Optional: `pyarrow` for Parquet output
 - Dev deps: `pytest>=7.0`, `pytest-cov`

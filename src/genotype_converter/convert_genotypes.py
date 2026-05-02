@@ -10,6 +10,31 @@ MISSING = {"0", "00", "na", "n/a", "--", ".", "", "0/0", "00/00"}
 FORMATS = {"AB", "TOP", "FORWARD", "DESIGN", "PLUS", "VCF"}
 
 
+def _require_formats(from_fmt: str, to_fmt: str) -> None:
+    unknown = [fmt for fmt in (from_fmt, to_fmt) if fmt not in FORMATS]
+    if unknown:
+        supported = ", ".join(sorted(FORMATS))
+        raise ValueError(f"Unsupported genotype format(s): {', '.join(unknown)}. Supported: {supported}")
+
+
+def _require_columns(fieldnames: list[str], required: list[str], input_path: str) -> None:
+    missing = [col for col in required if col not in fieldnames]
+    if missing:
+        raise ValueError(
+            f"{input_path} is missing required column(s): {', '.join(missing)}"
+        )
+
+
+def _require_markers(markers: list[str], table: dict, context: str) -> None:
+    missing = sorted({marker for marker in markers if marker and marker not in table})
+    if missing:
+        preview = ", ".join(missing[:10])
+        more = f" and {len(missing) - 10} more" if len(missing) > 10 else ""
+        raise ValueError(
+            f"{context} contains marker(s) not found in the lookup table: {preview}{more}"
+        )
+
+
 def load_lookup_table(lookup_path: str) -> dict:
     """
     Load a lookup.csv or conversion.csv and return:
@@ -24,6 +49,10 @@ def load_lookup_table(lookup_path: str) -> dict:
     reader = csv.DictReader(lines)
     fieldnames = list(reader.fieldnames or [])
     rows = list(reader)
+    if not fieldnames:
+        raise ValueError(f"Lookup file has no header row: {lookup_path}")
+    if "marker_name" not in fieldnames:
+        raise ValueError(f"Lookup file is missing required column: marker_name")
 
     # Detect format by checking for A_in_<FORMAT> column pattern
     is_lookup_fmt = any(
@@ -63,11 +92,15 @@ def load_lookup_table(lookup_path: str) -> dict:
             table.setdefault(name, []).append(entry)
         table = {k: v for k, v in table.items() if len(v) == 2}
 
+    if not table:
+        raise ValueError(f"No usable marker conversion rows found in lookup file: {lookup_path}")
+
     return table
 
 
 def _split_genotype(gt: str, sep: Optional[str]) -> Optional[tuple[str, str]]:
     """Split a genotype string into two alleles. Returns None for missing data."""
+    gt = gt.strip()
     if gt.lower() in MISSING:
         return None
     if sep:
@@ -120,6 +153,7 @@ def convert_wide(
     sample_col: str,
 ) -> None:
     """Convert a wide-format genotype file (samples × markers)."""
+    _require_formats(from_fmt, to_fmt)
     with open(input_path, newline="") as f:
         lines = [l for l in f if not l.startswith("#")]
     reader = csv.DictReader(lines)
@@ -127,6 +161,9 @@ def convert_wide(
         raise ValueError("Input file has no header row")
 
     fieldnames = list(reader.fieldnames)
+    _require_columns(fieldnames, [sample_col], input_path)
+    marker_cols = [col for col in fieldnames if col != sample_col]
+    _require_markers(marker_cols, table, input_path)
     rows = list(reader)
 
     out = Path(output_path)
@@ -162,6 +199,7 @@ def convert_long(
     genotype_col: str,
 ) -> None:
     """Convert a long-format genotype file (one row per sample×marker)."""
+    _require_formats(from_fmt, to_fmt)
     with open(input_path, newline="") as f:
         lines = [l for l in f if not l.startswith("#")]
     reader = csv.DictReader(lines)
@@ -169,7 +207,9 @@ def convert_long(
         raise ValueError("Input file has no header row")
 
     fieldnames = list(reader.fieldnames)
+    _require_columns(fieldnames, [sample_col, marker_col, genotype_col], input_path)
     rows = list(reader)
+    _require_markers([row.get(marker_col, "") for row in rows], table, input_path)
 
     out = Path(output_path)
     out.parent.mkdir(parents=True, exist_ok=True)

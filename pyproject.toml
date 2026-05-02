@@ -19,3 +19,4 @@ dev = ["pytest>=7.0", "pytest-cov"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src"]

@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import multiprocessing
-import os
+import sys
+import time
 from collections import Counter
 from pathlib import Path
 
@@ -21,6 +22,44 @@ from .output import (
 )
 
 
+class _Progress:
+    def __init__(self, total: int, label: str, enabled: bool):
+        self.total = total
+        self.label = label
+        self.enabled = enabled and total > 0
+        self.count = 0
+        self.started = time.monotonic()
+        self.last_draw = 0.0
+
+    def update(self, step: int = 1) -> None:
+        self.count += step
+        if not self.enabled:
+            return
+        now = time.monotonic()
+        if self.count < self.total and now - self.last_draw < 0.2:
+            return
+        self.last_draw = now
+        width = 30
+        done = int(width * self.count / self.total)
+        bar = "#" * done + "-" * (width - done)
+        pct = 100 * self.count / self.total
+        elapsed = max(now - self.started, 0.001)
+        rate = self.count / elapsed
+        remaining = (self.total - self.count) / rate if rate else 0
+        sys.stderr.write(
+            f"\r{self.label}: [{bar}] {self.count}/{self.total} "
+            f"({pct:5.1f}%) ETA {remaining:,.0f}s"
+        )
+        sys.stderr.flush()
+
+    def finish(self) -> None:
+        if self.enabled:
+            if self.count < self.total:
+                self.update(0)
+            sys.stderr.write("\n")
+            sys.stderr.flush()
+
+
 def _sha256(path: str) -> str:
     h = hashlib.sha256()
     with open(path, "rb") as f:
@@ -29,17 +68,50 @@ def _sha256(path: str) -> str:
     return h.hexdigest()
 
 
+def _align_records(
+    records,
+    reference_path: str,
+    workers: int,
+    save_alignment: bool,
+    progress: bool,
+):
+    tracker = _Progress(len(records), "Aligning variants", progress)
+    try:
+        if workers == 1:
+            aligner = VariantAligner(reference_path, save_alignment=save_alignment)
+            alignments = []
+            for record in records:
+                alignments.append(aligner.align(record))
+                tracker.update()
+            return alignments
+
+        chunksize = min(1000, max(1, len(records) // (workers * 20))) if records else 1
+        with multiprocessing.Pool(
+            workers,
+            initializer=_init_worker,
+            initargs=(reference_path, save_alignment),
+        ) as pool:
+            alignments = []
+            for alignment in pool.imap(_align_record, records, chunksize=chunksize):
+                alignments.append(alignment)
+                tracker.update()
+            return alignments
+    finally:
+        tracker.finish()
+
+
 def run(
     manifest_path: str,
     reference_path: str,
     outdir: str = "output",
     species: str = "all",
-    workers: int = 0,
+    workers: int = 1,
     save_alignment: bool = False,
     save_parquet: bool = False,
+    progress: bool = False,
 ) -> BuildStats:
-    if workers <= 0:
-        workers = max(1, os.cpu_count() or 1)
+    if workers < 1:
+        workers = 1
 
     manifest_sha = _sha256(manifest_path)
     reference_sha = _sha256(reference_path)
@@ -51,17 +123,7 @@ def run(
     out_dir.mkdir(parents=True, exist_ok=True)
 
     records = parse_manifest(manifest_path)
-
-    if workers == 1:
-        aligner = VariantAligner(reference_path)
-        alignments = [aligner.align(r) for r in records]
-    else:
-        with multiprocessing.Pool(
-            workers,
-            initializer=_init_worker,
-            initargs=(reference_path,),
-        ) as pool:
-            alignments = pool.map(_align_record, records)
+    alignments = _align_records(records, reference_path, workers, save_alignment, progress)
 
     results = [compute_conversion(r, a) for r, a in zip(records, alignments)]
 

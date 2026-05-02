@@ -1,0 +1,18 @@
+# Keep the validation instructions and placeholder directories in git.
+!README.md
+!.gitignore
+!.gitkeep
+!*/.gitkeep
+
+# Real validation data and generated outputs can be large or sensitive.
+.DS_Store
+data/*
+old_pipeline/*
+new_pipeline/*
+reports/*
+
+# Allow directory placeholders.
+!data/.gitkeep
+!old_pipeline/.gitkeep
+!new_pipeline/.gitkeep
+!reports/.gitkeep

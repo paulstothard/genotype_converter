@@ -110,7 +110,7 @@ def write_wide(
                 _val(r.name), _val(r.alt_name),
                 _val(r.chromosome), _val(str(r.position) if r.position else ""),
                 _val(r.vcf_ref), _val(r.vcf_alt),
-                _val(r.ab_a), _val(r.ab_b),
+                "A", "B",
                 _val(r.top_a), _val(r.top_b),
                 _val(r.forward_a), _val(r.forward_b),
                 _val(r.design_a), _val(r.design_b),
@@ -159,8 +159,8 @@ def write_lookup(
         f.write(
             "# Columns: marker_name, alt_marker_name, chromosome, position (1-based),\n"
             "#   ref_allele (VCF REF), alt_allele (VCF ALT),\n"
-            "#   A_in_<FORMAT> = nucleotide for allele A in that format encoding,\n"
-            "#   B_in_<FORMAT> = nucleotide for allele B in that format encoding,\n"
+            "#   A_in_<FORMAT> = allele code/value for allele A in that format encoding,\n"
+            "#   B_in_<FORMAT> = allele code/value for allele B in that format encoding,\n"
             "#   A_vcf / B_vcf = whether allele A/B is REF or ALT in VCF notation.\n"
             "# Supported formats: AB, TOP, FORWARD, DESIGN, PLUS.\n"
             "#\n"
@@ -182,7 +182,7 @@ def write_lookup(
                 _val(r.chromosome),
                 _val(str(r.position) if r.position else ""),
                 _val(r.vcf_ref), _val(r.vcf_alt),
-                _val(r.ab_a), _val(r.ab_b),
+                "A", "B",
                 _val(r.top_a), _val(r.top_b),
                 _val(r.forward_a), _val(r.forward_b),
                 _val(r.design_a), _val(r.design_b),
@@ -214,8 +214,8 @@ def write_lookup_parquet(
             "position": r.position,
             "ref_allele": _val(r.vcf_ref),
             "alt_allele": _val(r.vcf_alt),
-            "A_in_AB": _val(r.ab_a),
-            "B_in_AB": _val(r.ab_b),
+            "A_in_AB": "A",
+            "B_in_AB": "B",
             "A_in_TOP": _val(r.top_a),
             "B_in_TOP": _val(r.top_b),
             "A_in_FORWARD": _val(r.forward_a),

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from genotype_converter.manifest import IllmnStrand, parse_manifest
 
 
@@ -67,4 +69,11 @@ def test_snp5_t_r_probe(manifest_path):
     assert snp5.source_strand == IllmnStrand.BOT
     assert snp5.ilmn_strand == IllmnStrand.TOP
 
+
+def test_unrecognised_manifest_raises(tmp_path):
+    manifest = tmp_path / "not_a_manifest.csv"
+    manifest.write_text("marker,allele_a,allele_b\nSNP1,A,G\n")
+
+    with pytest.raises(ValueError, match="Manifest format not recognised"):
+        parse_manifest(str(manifest))
 

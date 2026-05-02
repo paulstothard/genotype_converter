@@ -208,4 +208,10 @@ def parse_manifest(path: str) -> list[ManifestRecord]:
     rows, fmt = _read_csv_rows(path)
     if fmt == ManifestType.AFFYMETRIX:
         return _parse_affymetrix_rows(rows)
-    return _parse_illumina_rows(rows)
+    if fmt == ManifestType.ILLUMINA:
+        return _parse_illumina_rows(rows)
+    raise ValueError(
+        f"Manifest format not recognised for {path!r}. Expected an Illumina "
+        "manifest with an IlmnID/Name/IlmnStrand header or an Affymetrix "
+        "manifest with Probe Set ID/Affy SNP ID columns."
+    )

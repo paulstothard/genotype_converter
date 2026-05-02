@@ -22,7 +22,7 @@ TOP format to the forward-strand PLUS format used by GWAS pipelines).
 
 | Name | Description |
 |---|---|
-| **AB** | Illumina A/B allele coding (A = first allele in manifest, B = second) |
+| **AB** | A/B allele coding (`A` = allele A, `B` = allele B) |
 | **TOP** | Illumina TOP strand |
 | **FORWARD** | Forward (plus) genomic strand |
 | **DESIGN** | Illumina probe design strand |
@@ -99,9 +99,14 @@ genotype-converter build \
 | `--reference` | (required) | Reference genome FASTA |
 | `--outdir` | `output` | Root output directory |
 | `--species` | `all` | Species name; used as a subdirectory label |
-| `--workers` | 0 (= all cores) | Parallel alignment worker processes |
+| `--workers` | `1` | Parallel alignment worker processes. Each worker loads the reference index, so increase carefully for large genomes. |
 | `--align` / `--no-align` | off | Write a detailed alignment display file |
 | `--parquet` / `--no-parquet` | off | Also write `lookup.parquet` (requires pyarrow) |
+| `--progress` / `--no-progress` | on | Show alignment progress while building. |
+
+For full mammalian genomes, start with `--workers 1`. Raising `--workers`
+can speed up small references or machines with abundant memory, but each worker
+loads its own minimap2 reference index. Values below 1 are treated as 1.
 
 ### Output files
 
@@ -215,6 +220,13 @@ SAMPLE001,SNP2,C/T
 Missing genotype codes (`0`, `00`, `NA`, `N/A`, `--`, `.`) are passed through
 unchanged.
 
+The converter now treats marker names and required columns as part of the input
+contract. Wide files must contain the sample column plus marker columns present
+in the lookup table. Long files must contain the sample, marker, and genotype
+columns, and all marker names in the marker column must exist in the lookup
+table. Missing columns, unknown markers, unrecognised lookup files, and
+unrecognised manifests raise clear errors instead of producing partial output.
+
 ---
 
 ## End-to-end example
@@ -289,6 +301,14 @@ genotype-converter convert \
   --from-format AB \
   --to-format FORWARD \
   --output mydata_forward.csv
+```
+
+AB input can use separators or adjacent allele labels:
+
+```
+sample_id,SNP1,SNP2
+SAMPLE001,A/B,A/A
+SAMPLE002,BB,AB
 ```
 
 ### Long-format input

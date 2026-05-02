@@ -20,13 +20,15 @@ def main():
               help="Output directory")
 @click.option("--species", default="all", show_default=True,
               help="Species name for output subdirectory")
-@click.option("--workers", default=0, show_default=True,
-              help="Worker processes (0 = use all cores)")
+@click.option("--workers", default=1, show_default=True,
+              help="Worker processes. Each worker loads the reference index, so increase carefully for large genomes.")
 @click.option("--align/--no-align", default=False, show_default=True,
               help="Write alignment.txt debug file")
 @click.option("--parquet/--no-parquet", default=False, show_default=True,
               help="Also write lookup.parquet (requires pyarrow)")
-def build_cmd(manifest, reference, outdir, species, workers, align, parquet):
+@click.option("--progress/--no-progress", default=True, show_default=True,
+              help="Show build progress while aligning variants")
+def build_cmd(manifest, reference, outdir, species, workers, align, parquet, progress):
     """Align manifest variants and build conversion/position files."""
     stats = run(
         manifest_path=manifest,
@@ -36,6 +38,7 @@ def build_cmd(manifest, reference, outdir, species, workers, align, parquet):
         workers=workers,
         save_alignment=align,
         save_parquet=parquet,
+        progress=progress,
     )
     click.echo(
         f"Build complete: {stats.total_markers} markers "

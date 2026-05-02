@@ -3,8 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from enum import Enum, auto
-from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 import mappy
 
@@ -43,23 +42,6 @@ def reverse_complement(seq: str) -> str:
         "ctagyrswmkvhdbnCTAGYRSWMKVHDBN",
     )
     return seq.translate(table)[::-1]
-
-
-def _load_fasta(path: str) -> dict[str, str]:
-    seqs: dict[str, str] = {}
-    name = None
-    chunks: list[str] = []
-    for line in Path(path).read_text().splitlines():
-        if line.startswith(">"):
-            if name is not None:
-                seqs[name] = "".join(chunks).upper()
-            name = line[1:].split()[0]
-            chunks = []
-        else:
-            chunks.append(line.strip())
-    if name is not None:
-        seqs[name] = "".join(chunks).upper()
-    return seqs
 
 
 def _prepare_query(flanking: str) -> tuple[str, int]:
@@ -113,14 +95,13 @@ def _query_pos_to_ref_pos(n_pos: int, hit) -> Optional[int]:
         return _cigar_query_to_ref(rc_offset, hit.r_st, hit.cigar)
 
 
-def _build_alignment_strings(query: str, ref_seq: str, hit) -> tuple[str, str]:
+def _build_alignment_strings(query: str, ref_sub: str, hit) -> tuple[str, str]:
     """Reconstruct gapped alignment strings from mappy hit + reference sequence."""
     if hit.strand == 1:
         q_bases = query[hit.q_st : hit.q_en]
     else:
         q_bases = reverse_complement(query[hit.q_st : hit.q_en])
 
-    ref_sub = ref_seq[hit.r_st : hit.r_en]
     q_aln: list[str] = []
     r_aln: list[str] = []
     q_pos = 0
@@ -260,15 +241,55 @@ def _resolve_indel_vcf(
     return ref_base, ref_base, ref_pos_0, DeterminationType.INDEL_SITE, None
 
 
+def _resolve_indel_vcf_from_fetch(
+    record: ManifestRecord,
+    strand: GenomicStrand,
+    fetch_ref: Callable[[int, int], str],
+    ref_pos_0: int,
+) -> tuple[str, str, int, DeterminationType, Optional[bool]]:
+    ref_base = fetch_ref(ref_pos_0, ref_pos_0 + 1) or "N"
+
+    if ref_pos_0 == 0:
+        return ref_base, ref_base, ref_pos_0, DeterminationType.INDEL_NO_ANCHOR, None
+
+    anchor_pos_0 = ref_pos_0 - 1
+    anchor = fetch_ref(anchor_pos_0, anchor_pos_0 + 1) or "N"
+
+    fa = record.first_allele
+    sa = record.second_allele
+
+    if fa == "-" and _is_indel_seq(sa):
+        ins_seq = sa.upper() if strand == GenomicStrand.PLUS else reverse_complement(sa.upper())
+        return anchor, anchor + ins_seq, anchor_pos_0, DeterminationType.INDEL_INSERTION, True
+
+    if sa == "-" and _is_indel_seq(fa):
+        del_len = len(fa)
+        true_anchor_pos_0 = ref_pos_0 - del_len
+        if true_anchor_pos_0 < 0:
+            return ref_base, ref_base, ref_pos_0, DeterminationType.INDEL_NO_ANCHOR, None
+        vcf_ref = fetch_ref(true_anchor_pos_0, true_anchor_pos_0 + del_len + 1)
+        if len(vcf_ref) != del_len + 1:
+            return ref_base, ref_base, ref_pos_0, DeterminationType.INDEL_NO_ANCHOR, None
+        return vcf_ref, vcf_ref[0], true_anchor_pos_0, DeterminationType.INDEL_DELETION, False
+
+    return ref_base, ref_base, ref_pos_0, DeterminationType.INDEL_SITE, None
+
+
 class VariantAligner:
     """Aligns variant flanking sequences to a reference genome using minimap2."""
 
-    def __init__(self, reference_path: str):
+    def __init__(self, reference_path: str, save_alignment: bool = False):
         self._ref_path = reference_path
+        self._save_alignment = save_alignment
         self._aligner = mappy.Aligner(reference_path, preset="sr", best_n=5)
         if not self._aligner:
             raise RuntimeError(f"Failed to load reference: {reference_path}")
-        self._ref_seqs = _load_fasta(reference_path)
+
+    def _ref_slice(self, chrom: str, start: int, end: int) -> str:
+        if start < 0 or end <= start:
+            return ""
+        seq = self._aligner.seq(chrom, start, end)
+        return (seq or "").upper()
 
     def align(self, record: ManifestRecord) -> AlignmentResult:
         query, n_pos = _prepare_query(record.flanking)
@@ -287,11 +308,9 @@ class VariantAligner:
         if ref_pos_0 is None:
             return AlignmentResult(chromosome=chrom, strand=strand)
 
-        ref_seq = self._ref_seqs.get(chrom, "")
-        if ref_pos_0 >= len(ref_seq):
+        ref_base = self._ref_slice(chrom, ref_pos_0, ref_pos_0 + 1)
+        if not ref_base:
             return AlignmentResult(chromosome=chrom, strand=strand)
-
-        ref_base = ref_seq[ref_pos_0]
 
         # Alleles on the forward strand (for VCF and PLUS encoding)
         allele1: Optional[str] = None
@@ -305,8 +324,11 @@ class VariantAligner:
                 allele2 = reverse_complement(record.first_allele.upper())
 
         if record.is_indel:
-            vcf_ref, vcf_alt, pos_0, determination, indel_ref_is_del = _resolve_indel_vcf(
-                record, strand, ref_seq, ref_pos_0
+            vcf_ref, vcf_alt, pos_0, determination, indel_ref_is_del = _resolve_indel_vcf_from_fetch(
+                record,
+                strand,
+                lambda start, end: self._ref_slice(chrom, start, end),
+                ref_pos_0,
             )
             variant_type = "INDEL"
         else:
@@ -318,22 +340,25 @@ class VariantAligner:
             indel_ref_is_del = None
             variant_type = "SNP"
 
-        q_aln, r_aln = _build_alignment_strings(query, ref_seq, hit)
-        aln_text = _format_alignment(
-            record=record,
-            query=query,
-            q_aln=q_aln,
-            r_aln=r_aln,
-            r_start=hit.r_st,
-            ref_pos_0=ref_pos_0,
-            ref_base=ref_base,
-            allele1=allele1 or "",
-            allele2=allele2 or "",
-            vcf_ref=vcf_ref,
-            vcf_alt=vcf_alt or "",
-            variant_type=variant_type,
-            determination_type=determination,
-        )
+        aln_text = None
+        if self._save_alignment:
+            ref_sub = self._ref_slice(chrom, hit.r_st, hit.r_en)
+            q_aln, r_aln = _build_alignment_strings(query, ref_sub, hit)
+            aln_text = _format_alignment(
+                record=record,
+                query=query,
+                q_aln=q_aln,
+                r_aln=r_aln,
+                r_start=hit.r_st,
+                ref_pos_0=ref_pos_0,
+                ref_base=ref_base,
+                allele1=allele1 or "",
+                allele2=allele2 or "",
+                vcf_ref=vcf_ref,
+                vcf_alt=vcf_alt or "",
+                variant_type=variant_type,
+                determination_type=determination,
+            )
 
         return AlignmentResult(
             chromosome=chrom,
@@ -351,9 +376,9 @@ class VariantAligner:
 _worker_aligner: Optional[VariantAligner] = None
 
 
-def _init_worker(reference_path: str) -> None:
+def _init_worker(reference_path: str, save_alignment: bool = False) -> None:
     global _worker_aligner
-    _worker_aligner = VariantAligner(reference_path)
+    _worker_aligner = VariantAligner(reference_path, save_alignment=save_alignment)
 
 
 def _align_record(record: ManifestRecord) -> AlignmentResult:
