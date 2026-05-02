@@ -14,7 +14,7 @@ variant.
 
 **`convert`** — takes a genotype data file and the lookup table produced by `build`,
 and rewrites the allele calls from one encoding to another (for example, Illumina
-TOP format to the forward-strand PLUS format used by GWAS pipelines).
+TOP format to the genomic PLUS format used by GWAS pipelines).
 
 ---
 
@@ -24,10 +24,14 @@ TOP format to the forward-strand PLUS format used by GWAS pipelines).
 |---|---|
 | **AB** | A/B allele coding (`A` = allele A, `B` = allele B) |
 | **TOP** | Illumina TOP strand |
-| **FORWARD** | Forward (plus) genomic strand |
+| **FORWARD** | Illumina/dbSNP forward-strand encoding from manifest F/R annotations |
 | **DESIGN** | Illumina probe design strand |
-| **PLUS** | Forward genomic strand |
+| **PLUS** | Genomic plus-strand / reference-strand encoding |
 | **VCF** | REF/ALT notation (reported as `REF` or `ALT`) |
+
+In Illumina genotyping manifests, **FORWARD** and **PLUS** are not synonyms.
+Forward/reverse is a source or dbSNP-oriented convention from the manifest,
+whereas plus/minus is the genomic reference-strand convention.
 
 ---
 
@@ -347,7 +351,9 @@ genotype-converter convert \
 
 5. **Format encoding.** Strand relationships (TOP/BOT, FORWARD, DESIGN, PLUS)
    are derived from the manifest's `IlmnStrand`, `SourceStrand`, and `IlmnID`
-   fields. Affymetrix alleles are on the forward strand by definition.
+   fields plus the observed reference alignment. Affymetrix alleles are treated
+   as forward-strand alleles and then projected onto PLUS using the alignment
+   orientation.
 
 ---
 
