@@ -1,7 +1,7 @@
 # Mixed-Manifest Validation Workspace
 
-Use this folder to test database-backed conversion when a large genotype input
-contains markers from multiple bovine manifests.
+Use this folder to test database-backed conversion when genotype inputs contain
+markers from multiple manifests, assemblies, or species.
 
 Only this README and `.gitkeep` placeholder files should be committed. Put real
 manifests, reference FASTA files, genotype inputs, SQLite databases, build
@@ -14,12 +14,27 @@ ignored.
 validation/mixed_manifest/
   sources/
     bos_taurus/
+      ARS_UCD1_2/
+        manifests/
+          <manifest-a>.csv
+        references/          # required directory name; put one FASTA here
+          <ARS-UCD1.2-reference>.fa
+        genotypes/
+          <genotype-file-or-folder-inputs>
       ARS_UCD_v2_0/
         manifests/
           <manifest-a>.csv
           <manifest-b>.csv
         references/          # required directory name; put one FASTA here
           <reference>.fa
+        genotypes/
+          <genotype-file-or-folder-inputs>
+    sus_scrofa/
+      Sscrofa11_1/
+        manifests/
+          <pig-manifest>.csv
+        references/          # required directory name; put one FASTA here
+          <Sscrofa11.1-reference>.fa
         genotypes/
           <genotype-file-or-folder-inputs>
   database_build/
@@ -30,19 +45,36 @@ validation/mixed_manifest/
 Provenance-preserving filenames are preferred. Do not rename files just to make
 them generic.
 
+## Naming Conventions
+
+Use stable scientific species labels for folder names:
+
+- cattle or bovine: `bos_taurus`
+- pig or porcine: `sus_scrofa`
+
+Use the reference genome or assembly name for the assembly folder, for example
+`ARS_UCD_v2_0`, `ARS_UCD1_2`, or `Sscrofa11_1`. The CLI `--species` and
+`--assembly` values must exactly match these folder names.
+
+Each `sources/<species>/<assembly>/` folder is one build target. It can contain
+many manifests, but it should contain exactly one matching reference FASTA in
+`references/`. A reference FASTA can contain many chromosomes or contigs. If the
+same assembly is represented by substantially different FASTA files, such as
+soft-masked and unmasked versions, create separate assembly folders with clear
+names instead of mixing them in one folder.
+
 ## What To Add
 
-- Put all bovine manifest CSVs for the test in
-  `sources/bos_taurus/ARS_UCD_v2_0/manifests/`.
+- Put manifest CSVs for an assembly in
+  `sources/<species>/<assembly>/manifests/`.
 - Put exactly one matching reference FASTA in
-  `sources/bos_taurus/ARS_UCD_v2_0/references/`. The directory name is plural
-  because it is part of the database source-folder convention, but each
-  species/assembly folder should contain one reference file for a build.
+  `sources/<species>/<assembly>/references/`. The directory name is plural
+  because it is part of the database source-folder convention.
 - Put genotype files to convert in
-  `sources/bos_taurus/ARS_UCD_v2_0/genotypes/`.
+  `sources/<species>/<assembly>/genotypes/`.
 
-If you need a different assembly, create a sibling assembly folder under
-`sources/bos_taurus/` using the same internal layout.
+If a reference is supplied as multiple FASTA files, make a single combined FASTA
+for this validation workspace before building the database.
 
 ## Build The SQLite Database
 
@@ -59,8 +91,9 @@ genotype-converter db build \
   --progress
 ```
 
-Use `--workers 1` for large bovine references unless the machine has enough
-memory for one minimap2 reference index per worker.
+This discovers every complete `sources/<species>/<assembly>/` folder under the
+source root. Use `--workers 1` for large livestock references unless the machine
+has enough memory for one minimap2 reference index per worker.
 
 ## Inspect Imported Manifests
 
@@ -70,6 +103,9 @@ genotype-converter db list-manifests \
   --species bos_taurus \
   --assembly ARS_UCD_v2_0
 ```
+
+Change `--species` and `--assembly` to inspect another folder, such as
+`--species sus_scrofa --assembly Sscrofa11_1`.
 
 ## Convert A Folder Of CSV Genotypes
 
@@ -88,6 +124,11 @@ genotype-converter convert \
   --outdir validation/mixed_manifest/converted \
   --resolution-report validation/mixed_manifest/reports/manifest_resolution.csv
 ```
+
+One conversion command targets one species and assembly. The SQLite database can
+hold multiple species and assemblies, but genotype conversion should be run
+separately for cattle and pig inputs unless a future workflow explicitly adds
+cross-species dispatch.
 
 Use `--on-ambiguous-marker fail` when you want the command to stop on unresolved
 conflicting marker rules.
