@@ -205,7 +205,7 @@ def write_long(path: Path, markers: list[Occurrence]) -> None:
                 )
 
 
-def write_legacy_illumina_matrix(path: Path, markers: list[Occurrence]) -> None:
+def write_illumina_gsgt_matrix(path: Path, markers: list[Occurrence]) -> None:
     samples = ["SAMPLE001", "SAMPLE002", "SAMPLE003"]
     with path.open("w") as handle:
         write_gsgt_header(
@@ -223,7 +223,7 @@ def write_legacy_illumina_matrix(path: Path, markers: list[Occurrence]) -> None:
             handle.write(marker.record.name + "\t" + "\t".join(values) + "\n")
 
 
-def write_legacy_illumina_long(path: Path, markers: list[Occurrence]) -> None:
+def write_illumina_gsgt_long(path: Path, markers: list[Occurrence]) -> None:
     samples = ["SAMPLE001", "SAMPLE002", "SAMPLE003"]
     columns = [
         "SNP Name",
@@ -280,7 +280,7 @@ def write_legacy_illumina_long(path: Path, markers: list[Occurrence]) -> None:
                 )
 
 
-def write_legacy_affy_dual_column(path: Path, markers: list[Occurrence]) -> None:
+def write_affymetrix_axiom_dual_call_matrix(path: Path, markers: list[Occurrence]) -> None:
     samples = ["SAMPLE001", "SAMPLE002", "SAMPLE003"]
     with path.open("w") as handle:
         header = ["probeset_id"]
@@ -384,9 +384,11 @@ def write_examples(species_dir: Path) -> None:
     write_selection_report(genotype_dir / "marker_selection.csv", selected, by_marker)
     write_wide(genotype_dir / "mixed_manifest_wide_ab.csv", selected)
     write_long(genotype_dir / "mixed_manifest_long_ab.csv", selected)
-    write_legacy_illumina_matrix(genotype_dir / "legacy_illumina_matrix_ab.txt", selected)
-    write_legacy_illumina_long(genotype_dir / "legacy_illumina_long_multiformat.txt", selected)
-    write_legacy_affy_dual_column(genotype_dir / "legacy_affy_dual_column.txt", selected)
+    write_illumina_gsgt_matrix(genotype_dir / "illumina_gsgt_matrix_ab.txt", selected)
+    write_illumina_gsgt_long(genotype_dir / "illumina_gsgt_long_multiformat.txt", selected)
+    write_affymetrix_axiom_dual_call_matrix(
+        genotype_dir / "affymetrix_axiom_dual_call_matrix.txt", selected
+    )
     write_plink1(genotype_dir / "mixed_manifest_plink1_ab", selected)
     write_plink2(genotype_dir / "mixed_manifest_plink2_ab", selected)
     shared_count = sum(1 for marker in selected if len(by_marker[marker.record.name]) > 1)

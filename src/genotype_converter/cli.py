@@ -270,29 +270,59 @@ def _csv_marker_source_map(
     sample_col: str,
     marker_col: str,
 ) -> dict[str, set[str]]:
-    markers: list[str] = []
     sources: dict[str, set[str]] = {}
     for path in paths:
+        markers = _genotype_text_markers(path, layout, sample_col, marker_col)
+        for marker in markers:
+            if marker:
+                sources.setdefault(marker, set()).add(str(path))
+    return sources
+
+
+def _gsgt_data_lines(path: Path) -> list[str]:
+    lines = path.read_text().splitlines()
+    try:
+        data_index = next(index for index, line in enumerate(lines) if line.strip() == "[Data]")
+    except StopIteration as exc:
+        raise click.ClickException(f"{path} is missing a [Data] section") from exc
+    return [line for line in lines[data_index + 1 :] if line.strip()]
+
+
+def _genotype_text_markers(
+    path: Path,
+    layout: str,
+    sample_col: str,
+    marker_col: str,
+) -> list[str]:
+    layout = layout.lower()
+    if layout in {"wide", "long"}:
         with path.open(newline="") as handle:
             lines = [line for line in handle if not line.startswith("#")]
         reader = csv.DictReader(lines)
         if reader.fieldnames is None:
             raise click.ClickException(f"Input file has no header row: {path}")
-        if layout.lower() == "wide":
-            markers.extend(col for col in reader.fieldnames if col != sample_col)
-        elif layout.lower() == "long":
-            if marker_col not in reader.fieldnames:
-                raise click.ClickException(
-                    f"{path} is missing marker column {marker_col!r}"
-                )
-            markers.extend(row.get(marker_col, "") for row in reader)
-        else:
-            raise click.ClickException(f"Unsupported genotype layout: {layout}")
-        for marker in markers:
-            if marker:
-                sources.setdefault(marker, set()).add(str(path))
-        markers = []
-    return sources
+        if layout == "wide":
+            return [col for col in reader.fieldnames if col != sample_col]
+        if marker_col not in reader.fieldnames:
+            raise click.ClickException(f"{path} is missing marker column {marker_col!r}")
+        return [row.get(marker_col, "") for row in reader]
+    if layout == "illumina-matrix":
+        data_lines = _gsgt_data_lines(path)
+        return [line.split("\t", 1)[0] for line in data_lines[1:]]
+    if layout == "illumina-long":
+        data_lines = _gsgt_data_lines(path)
+        reader = csv.DictReader(data_lines, delimiter="\t")
+        if reader.fieldnames is None:
+            raise click.ClickException(f"{path} has no data header row")
+        if "SNP Name" not in reader.fieldnames:
+            raise click.ClickException(f"{path} is missing SNP Name column")
+        return [row.get("SNP Name", "") for row in reader]
+    if layout == "affymetrix-matrix":
+        lines = [line for line in path.read_text().splitlines() if line.strip()]
+        if not lines:
+            raise click.ClickException(f"Input file has no header row: {path}")
+        return [line.split("\t", 1)[0] for line in lines[1:]]
+    raise click.ClickException(f"Unsupported genotype layout: {layout}")
 
 
 def _plink_bfile_input_prefixes(bfile, bfile_dir, pattern) -> list[Path]:
@@ -702,8 +732,11 @@ def db_discover_sources_cmd(source_root, output_format):
 @click.option("--overwrite/--no-overwrite", default=False, show_default=True,
               help="Allow batch conversion to replace existing output files")
 @click.option("--layout", default="wide", show_default=True,
-              type=click.Choice(["wide", "long"], case_sensitive=False),
-              help="Input file layout: wide (samples × markers) or long (one row per sample×marker)")
+              type=click.Choice(
+                  ["wide", "long", "illumina-matrix", "illumina-long", "affymetrix-matrix"],
+                  case_sensitive=False,
+              ),
+              help="Input file layout")
 @click.option("--in-sep", default=None,
               help="Allele separator in input (default: auto-detect from /, space, or adjacent)")
 @click.option("--out-sep", default="/", show_default=True,

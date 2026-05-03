@@ -24,6 +24,9 @@ whereas plus/minus is the genomic reference-strand convention.
 |---|---|---|---|
 | `convert --layout wide` | CSV, one sample per row and one marker per column | CSV | Genotype cells are rewritten. Single files and folders are supported. |
 | `convert --layout long` | CSV, one sample-marker genotype per row | CSV | The genotype column is rewritten. Single files and folders are supported. |
+| `convert --layout illumina-matrix` | Illumina GenomeStudio/GSGT matrix report | Illumina/GSGT matrix report | Matrix genotype calls are rewritten. |
+| `convert --layout illumina-long` | Illumina GenomeStudio/GSGT long report | Illumina/GSGT long report | Target allele columns are filled or rewritten. |
+| `convert --layout affymetrix-matrix` | Affymetrix/Axiom paired-call matrix | Affymetrix/Axiom paired-call matrix | The AB or native nucleotide call in each sample pair is rewritten. |
 | `convert-plink` | PLINK 1 binary fileset: `.bed`, `.bim`, `.fam` | PLINK 1 binary fileset | Allele labels in `.bim` are rewritten; `.bed` and `.fam` are copied unchanged. Single filesets and folders are supported. |
 | `convert-pfile` | PLINK 2 fileset: `.pgen`, `.pvar`, `.psam` | PLINK 2 fileset | Biallelic allele labels in `.pvar` are rewritten; `.pgen` and `.psam` are copied unchanged. Single filesets and folders are supported. |
 
@@ -171,6 +174,88 @@ Additional options:
 | `--marker-col` | `marker_name` | Column name for marker IDs. |
 | `--genotype-col` | `genotype` | Column name for genotype calls. |
 
+## Illumina GenomeStudio Matrix
+
+Illumina GenomeStudio/GSGT matrix reports have a `[Header]` section followed by
+`[Data]`. Marker names are rows and sample IDs are columns.
+
+```text
+[Header]
+GSGT Version	2.0.4
+[Data]
+	SAMPLE001	SAMPLE002
+SNP1	AA	AG
+SNP2	CC	AC
+```
+
+Use `--layout illumina-matrix`. The output preserves the header and matrix
+shape, rewriting genotype calls in the sample columns.
+
+```bash
+genotype-converter convert \
+  --genotypes gsgt_top.txt \
+  --lookup output/cattle/genome/manifest.genome.lookup.csv \
+  --from-format TOP \
+  --to-format PLUS \
+  --layout illumina-matrix \
+  --out-sep "" \
+  --output gsgt_plus.txt
+```
+
+## Illumina GenomeStudio Long
+
+Illumina/GSGT long reports have one row per marker/sample and can contain
+multiple allele encodings in separate columns.
+
+```text
+[Header]
+GSGT Version	2.0.4
+[Data]
+SNP Name	Sample ID	Allele1 - Top	Allele2 - Top	Allele1 - Forward	Allele2 - Forward	Allele1 - AB	Allele2 - AB	Allele1 - Design	Allele2 - Design	Allele1 - Plus	Allele2 - Plus	GC Score
+SNP1	SAMPLE001	A	G	-	-	A	B	-	-	-	-	0.99
+```
+
+Use `--layout illumina-long`. The converter reads the two columns matching
+`--from-format` and fills or rewrites the two columns matching `--to-format`.
+`VCF` is not supported for this layout because GenomeStudio long reports do not
+have VCF genotype columns.
+
+```bash
+genotype-converter convert \
+  --genotypes gsgt_long_top.txt \
+  --lookup output/cattle/genome/manifest.genome.lookup.csv \
+  --from-format TOP \
+  --to-format PLUS \
+  --layout illumina-long \
+  --output gsgt_long_plus.txt
+```
+
+## Affymetrix/Axiom Matrix
+
+Affymetrix/Axiom paired-call matrices repeat each sample column. The first
+column in each pair is the AB call and the second is the native nucleotide call.
+
+```text
+probeset_id	SAMPLE001	SAMPLE001	SAMPLE002	SAMPLE002
+AX-1	AA	TT	AB	TC
+AX-2	NoCall	---	BB	GG
+```
+
+Use `--layout affymetrix-matrix`. If `--from-format AB`, the converter reads
+the first column in each sample pair. Otherwise it reads the native nucleotide
+column. If `--to-format AB`, it rewrites the first column; otherwise it rewrites
+the native nucleotide column. `VCF` is not supported for this layout.
+
+```bash
+genotype-converter convert \
+  --genotypes axiom_ab_and_native.txt \
+  --lookup output/cattle/genome/axiom.genome.lookup.csv \
+  --from-format AB \
+  --to-format PLUS \
+  --layout affymetrix-matrix \
+  --output axiom_plus.txt
+```
+
 ## CSV Missing Data
 
 These missing genotype codes are passed through unchanged:
@@ -181,6 +266,7 @@ These missing genotype codes are passed through unchanged:
 NA
 N/A
 --
+-
 .
 0/0
 00/00

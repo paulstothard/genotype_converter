@@ -7,8 +7,11 @@ import pytest
 
 from genotype_converter.convert_genotypes import (
     _split_genotype,
+    convert_affymetrix_matrix,
     convert_batch,
     convert_long,
+    convert_illumina_long,
+    convert_illumina_matrix,
     convert_wide,
     load_lookup_table,
 )
@@ -178,6 +181,96 @@ def test_convert_long_vcf_output(table, tmp_path):
     rows = list(csv.DictReader(out_file.read_text().splitlines()))
     assert rows[0]["genotype"] == "REF/ALT"
     assert rows[1]["genotype"] == "ALT/REF"
+
+
+def test_convert_illumina_matrix_ab_to_plus(table, tmp_path):
+    input_data = "\n".join(
+        [
+            "[Header]",
+            "GSGT Version\t2.0.4",
+            "[Data]",
+            "\tS1\tS2",
+            "SNP1\tAB\tBB",
+            "SNP2\tAA\tAB",
+        ]
+    ) + "\n"
+    in_file = tmp_path / "gsgt_matrix.txt"
+    out_file = tmp_path / "gsgt_matrix_plus.txt"
+    in_file.write_text(input_data)
+
+    stats = convert_illumina_matrix(
+        input_path=str(in_file),
+        output_path=str(out_file),
+        table=table,
+        from_fmt="AB",
+        to_fmt="PLUS",
+        in_sep=None,
+        out_sep="",
+    )
+
+    lines = out_file.read_text().splitlines()
+    assert lines[:4] == ["[Header]", "GSGT Version\t2.0.4", "[Data]", "\tS1\tS2"]
+    assert lines[4] == "SNP1\tAG\tGG"
+    assert lines[5] == "SNP2\tTT\tTG"
+    assert stats.markers_total == 2
+    assert stats.genotype_cells_total == 4
+
+
+def test_convert_illumina_long_fills_target_columns(table, tmp_path):
+    input_data = "\n".join(
+        [
+            "[Header]",
+            "GSGT Version\t2.0.4",
+            "[Data]",
+            "SNP Name\tSample ID\tAllele1 - Top\tAllele2 - Top\tAllele1 - Forward\tAllele2 - Forward\tAllele1 - AB\tAllele2 - AB\tAllele1 - Design\tAllele2 - Design\tAllele1 - Plus\tAllele2 - Plus\tGC Score",
+            "SNP2\tS1\tA\tC\t-\t-\tA\tB\t-\t-\t-\t-\t0.99",
+            "SNP1\tS1\tA\tG\t-\t-\tA\tB\t-\t-\t-\t-\t0.99",
+        ]
+    ) + "\n"
+    in_file = tmp_path / "gsgt_long.txt"
+    out_file = tmp_path / "gsgt_long_plus.txt"
+    in_file.write_text(input_data)
+
+    stats = convert_illumina_long(
+        input_path=str(in_file),
+        output_path=str(out_file),
+        table=table,
+        from_fmt="TOP",
+        to_fmt="PLUS",
+    )
+
+    lines = out_file.read_text().splitlines()
+    assert lines[4].split("\t")[10:12] == ["T", "G"]
+    assert lines[5].split("\t")[10:12] == ["A", "G"]
+    assert stats.genotypes_parsed == 2
+    assert stats.alleles_changed == 2
+
+
+def test_convert_affymetrix_matrix_ab_to_plus(table, tmp_path):
+    input_data = "\n".join(
+        [
+            "probeset_id\tS1\tS1\tS2\tS2",
+            "SNP1\tAB\t--\tBB\t--",
+            "SNP2\tAA\t--\tNoCall\t---",
+        ]
+    ) + "\n"
+    in_file = tmp_path / "affy.txt"
+    out_file = tmp_path / "affy_plus.txt"
+    in_file.write_text(input_data)
+
+    stats = convert_affymetrix_matrix(
+        input_path=str(in_file),
+        output_path=str(out_file),
+        table=table,
+        from_fmt="AB",
+        to_fmt="PLUS",
+    )
+
+    lines = out_file.read_text().splitlines()
+    assert lines[1] == "SNP1\tAB\tAG\tBB\tGG"
+    assert lines[2] == "SNP2\tAA\tTT\tNoCall\t---"
+    assert stats.genotype_cells_total == 4
+    assert stats.genotypes_parsed == 3
 
 
 def test_convert_batch_wide_top_to_plus(table, tmp_path):

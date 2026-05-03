@@ -92,9 +92,9 @@ sources/<species>/genotypes/synthetic_mixed_manifest/
   marker_selection.csv
   mixed_manifest_wide_ab.csv
   mixed_manifest_long_ab.csv
-  legacy_illumina_matrix_ab.txt
-  legacy_illumina_long_multiformat.txt
-  legacy_affy_dual_column.txt
+  illumina_gsgt_matrix_ab.txt
+  illumina_gsgt_long_multiformat.txt
+  affymetrix_axiom_dual_call_matrix.txt
   mixed_manifest_plink1_ab.bed
   mixed_manifest_plink1_ab.bim
   mixed_manifest_plink1_ab.fam
@@ -109,12 +109,10 @@ for this converter's metadata rewrite tests: `.bim` and `.pvar` contain real
 selected marker IDs, while `.bed` and `.pgen` are small placeholder genotype
 matrices because the converter copies those files unchanged.
 
-The `legacy_*` files mirror useful formats seen in the older `snp_conversion`
-test fixtures: Illumina/GSGT matrix, Illumina/GSGT long multi-encoding, and
-Axiom/Affymetrix paired-sample columns where each sample has an AB call and a
-native nucleotide call. Those legacy layouts are generated as future parser
-fixtures; the current converter supports the documented CSV, PLINK 1, and
-PLINK 2 inputs above.
+The Illumina/GSGT and Affymetrix/Axiom files are real vendor genotype formats
+seen in the older `snp_conversion` test fixtures. They are generated here to
+exercise direct parser support alongside the CSV, PLINK 1, and PLINK 2 inputs
+above.
 
 ## Download Reference Genomes
 

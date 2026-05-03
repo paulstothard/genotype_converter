@@ -192,6 +192,9 @@ Supported genotype file layouts:
 |---|---|---|---|
 | `convert --layout wide` | CSV, one sample per row and one marker per column | CSV | Best for small datasets, examples, and debugging. Can also process a folder of CSV files. |
 | `convert --layout long` | CSV, one sample-marker genotype per row | CSV | Useful for database-style genotype tables. Can also process a folder of CSV files. |
+| `convert --layout illumina-matrix` | Illumina GenomeStudio/GSGT matrix report | Illumina/GSGT matrix report | Rewrites marker-by-sample genotype calls. |
+| `convert --layout illumina-long` | Illumina GenomeStudio/GSGT long report | Illumina/GSGT long report | Fills or rewrites the requested target allele columns. |
+| `convert --layout affymetrix-matrix` | Affymetrix/Axiom paired-call matrix | Affymetrix/Axiom paired-call matrix | Rewrites the AB or native nucleotide column in each sample pair. |
 | `convert-plink` | PLINK 1 binary fileset: `.bed`, `.bim`, `.fam` | PLINK 1 binary fileset | Rewrites allele labels in `.bim`; copies `.bed` and `.fam` unchanged. Can also process a folder of filesets. |
 | `convert-pfile` | PLINK 2 fileset: `.pgen`, `.pvar`, `.psam` | PLINK 2 fileset | Rewrites biallelic `REF`/`ALT` labels in `.pvar`; copies `.pgen` and `.psam` unchanged. Can also process a folder of filesets. |
 

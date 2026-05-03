@@ -7,8 +7,16 @@ from pathlib import Path
 from typing import Optional
 
 
-MISSING = {"0", "00", "na", "n/a", "--", ".", "", "0/0", "00/00"}
+MISSING = {"0", "00", "na", "n/a", "-", "--", ".", "", "0/0", "00/00"}
 FORMATS = {"AB", "TOP", "FORWARD", "DESIGN", "PLUS", "VCF"}
+LAYOUTS = {"wide", "long", "illumina-matrix", "illumina-long", "affymetrix-matrix"}
+ILLUMINA_LONG_COLUMNS = {
+    "TOP": ("Allele1 - Top", "Allele2 - Top"),
+    "FORWARD": ("Allele1 - Forward", "Allele2 - Forward"),
+    "AB": ("Allele1 - AB", "Allele2 - AB"),
+    "DESIGN": ("Allele1 - Design", "Allele2 - Design"),
+    "PLUS": ("Allele1 - Plus", "Allele2 - Plus"),
+}
 
 
 @dataclass(frozen=True)
@@ -184,6 +192,39 @@ def _join_alleles(a: str, b: str, sep: str) -> str:
     return f"{a}{sep}{b}"
 
 
+def _convert_pair(
+    pair: tuple[str, str],
+    marker: str,
+    from_fmt: str,
+    to_fmt: str,
+    table: dict,
+) -> tuple[tuple[str, str], int, int]:
+    a_out, a_known = _convert_allele_with_status(pair[0], marker, from_fmt, to_fmt, table)
+    b_out, b_known = _convert_allele_with_status(pair[1], marker, from_fmt, to_fmt, table)
+    alleles_changed = int(a_out != pair[0]) + int(b_out != pair[1])
+    unknown_alleles = int(not a_known) + int(not b_known)
+    return (a_out, b_out), alleles_changed, unknown_alleles
+
+
+def _read_gsgt_sections(input_path: str) -> tuple[list[str], list[str]]:
+    lines = Path(input_path).read_text().splitlines()
+    try:
+        data_index = next(index for index, line in enumerate(lines) if line.strip() == "[Data]")
+    except StopIteration as exc:
+        raise ValueError(f"{input_path} is missing a [Data] section") from exc
+    return lines[: data_index + 1], [line for line in lines[data_index + 1 :] if line.strip()]
+
+
+def _write_lines(path: str, lines: list[str]) -> None:
+    out = Path(path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text("\n".join(lines) + "\n")
+
+
+def _marker_count(markers: list[str]) -> int:
+    return len({marker for marker in markers if marker})
+
+
 def convert_wide(
     input_path: str,
     output_path: str,
@@ -230,10 +271,11 @@ def convert_wide(
                     missing_or_unparsed_genotypes += 1
                     continue  # missing – keep as-is
                 genotypes_parsed += 1
-                a_out, a_known = _convert_allele_with_status(pair[0], col, from_fmt, to_fmt, table)
-                b_out, b_known = _convert_allele_with_status(pair[1], col, from_fmt, to_fmt, table)
-                unknown_alleles += int(not a_known) + int(not b_known)
-                alleles_changed += int(a_out != pair[0]) + int(b_out != pair[1])
+                (a_out, b_out), pair_changed, pair_unknown = _convert_pair(
+                    pair, col, from_fmt, to_fmt, table
+                )
+                unknown_alleles += pair_unknown
+                alleles_changed += pair_changed
                 converted = _join_alleles(a_out, b_out, out_sep)
                 if converted != gt:
                     genotypes_changed += 1
@@ -245,6 +287,213 @@ def convert_wide(
         rows_total=len(rows),
         markers_total=len(marker_cols),
         genotype_cells_total=genotype_cells_total,
+        genotypes_parsed=genotypes_parsed,
+        genotypes_changed=genotypes_changed,
+        missing_or_unparsed_genotypes=missing_or_unparsed_genotypes,
+        alleles_changed=alleles_changed,
+        unknown_alleles=unknown_alleles,
+    )
+
+
+def convert_illumina_matrix(
+    input_path: str,
+    output_path: str,
+    table: dict,
+    from_fmt: str,
+    to_fmt: str,
+    in_sep: Optional[str],
+    out_sep: str,
+) -> ConvertStats:
+    """Convert an Illumina GenomeStudio/GSGT matrix file."""
+    _require_formats(from_fmt, to_fmt)
+    header_lines, data_lines = _read_gsgt_sections(input_path)
+    if not data_lines:
+        raise ValueError(f"{input_path} has no data rows")
+    sample_header = data_lines[0].split("\t")
+    if len(sample_header) < 2:
+        raise ValueError(f"{input_path} has no sample columns")
+    marker_rows = [line.split("\t") for line in data_lines[1:]]
+    markers = [row[0] for row in marker_rows if row and row[0]]
+    _require_markers(markers, table, input_path)
+
+    genotypes_parsed = 0
+    genotypes_changed = 0
+    missing_or_unparsed_genotypes = 0
+    alleles_changed = 0
+    unknown_alleles = 0
+    out_lines = list(header_lines)
+    out_lines.append(data_lines[0])
+
+    for row in marker_rows:
+        if not row:
+            continue
+        marker = row[0]
+        new_row = [marker]
+        for gt in row[1:]:
+            pair = _split_genotype(gt, in_sep)
+            if pair is None:
+                missing_or_unparsed_genotypes += 1
+                new_row.append(gt)
+                continue
+            genotypes_parsed += 1
+            converted_pair, pair_changed, pair_unknown = _convert_pair(
+                pair, marker, from_fmt, to_fmt, table
+            )
+            alleles_changed += pair_changed
+            unknown_alleles += pair_unknown
+            converted = _join_alleles(converted_pair[0], converted_pair[1], out_sep)
+            if converted != gt:
+                genotypes_changed += 1
+            new_row.append(converted)
+        out_lines.append("\t".join(new_row))
+
+    _write_lines(output_path, out_lines)
+    sample_count = max(len(sample_header) - 1, 0)
+    return ConvertStats(
+        input_path=str(input_path),
+        output_path=str(output_path),
+        rows_total=len(marker_rows),
+        markers_total=_marker_count(markers),
+        genotype_cells_total=len(marker_rows) * sample_count,
+        genotypes_parsed=genotypes_parsed,
+        genotypes_changed=genotypes_changed,
+        missing_or_unparsed_genotypes=missing_or_unparsed_genotypes,
+        alleles_changed=alleles_changed,
+        unknown_alleles=unknown_alleles,
+    )
+
+
+def convert_illumina_long(
+    input_path: str,
+    output_path: str,
+    table: dict,
+    from_fmt: str,
+    to_fmt: str,
+) -> ConvertStats:
+    """Convert an Illumina GenomeStudio/GSGT long report."""
+    _require_formats(from_fmt, to_fmt)
+    if from_fmt == "VCF" or to_fmt == "VCF":
+        raise ValueError("Illumina long layout does not have VCF allele columns")
+    from_cols = ILLUMINA_LONG_COLUMNS[from_fmt]
+    to_cols = ILLUMINA_LONG_COLUMNS[to_fmt]
+    header_lines, data_lines = _read_gsgt_sections(input_path)
+    reader = csv.DictReader(data_lines, delimiter="\t")
+    if reader.fieldnames is None:
+        raise ValueError(f"{input_path} has no data header row")
+    fieldnames = list(reader.fieldnames)
+    _require_columns(fieldnames, ["SNP Name", "Sample ID", *from_cols, *to_cols], input_path)
+    rows = list(reader)
+    _require_markers([row.get("SNP Name", "") for row in rows], table, input_path)
+
+    genotypes_parsed = 0
+    genotypes_changed = 0
+    missing_or_unparsed_genotypes = 0
+    alleles_changed = 0
+    unknown_alleles = 0
+    out_lines = list(header_lines)
+    out_lines.append("\t".join(fieldnames))
+
+    for row in rows:
+        marker = row.get("SNP Name", "")
+        pair = (row.get(from_cols[0], ""), row.get(from_cols[1], ""))
+        if pair[0].lower() in MISSING or pair[1].lower() in MISSING:
+            missing_or_unparsed_genotypes += 1
+        else:
+            genotypes_parsed += 1
+            converted_pair, pair_changed, pair_unknown = _convert_pair(
+                pair, marker, from_fmt, to_fmt, table
+            )
+            alleles_changed += pair_changed
+            unknown_alleles += pair_unknown
+            if (row.get(to_cols[0], ""), row.get(to_cols[1], "")) != converted_pair:
+                genotypes_changed += 1
+            row[to_cols[0]], row[to_cols[1]] = converted_pair
+        out_lines.append("\t".join(row.get(field, "") for field in fieldnames))
+
+    _write_lines(output_path, out_lines)
+    return ConvertStats(
+        input_path=str(input_path),
+        output_path=str(output_path),
+        rows_total=len(rows),
+        markers_total=_marker_count([row.get("SNP Name", "") for row in rows]),
+        genotype_cells_total=len(rows),
+        genotypes_parsed=genotypes_parsed,
+        genotypes_changed=genotypes_changed,
+        missing_or_unparsed_genotypes=missing_or_unparsed_genotypes,
+        alleles_changed=alleles_changed,
+        unknown_alleles=unknown_alleles,
+    )
+
+
+def convert_affymetrix_matrix(
+    input_path: str,
+    output_path: str,
+    table: dict,
+    from_fmt: str,
+    to_fmt: str,
+) -> ConvertStats:
+    """Convert an Affymetrix/Axiom matrix with paired AB and native-call columns."""
+    _require_formats(from_fmt, to_fmt)
+    if from_fmt == "VCF" or to_fmt == "VCF":
+        raise ValueError("Affymetrix/Axiom matrix layout does not have VCF allele columns")
+    lines = Path(input_path).read_text().splitlines()
+    if not lines:
+        raise ValueError(f"Input file has no header row: {input_path}")
+    header = lines[0].split("\t")
+    if len(header) < 3 or (len(header) - 1) % 2 != 0:
+        raise ValueError(
+            f"{input_path} should have probeset_id followed by paired sample columns"
+        )
+    if header[0] != "probeset_id":
+        raise ValueError(f"{input_path} first column should be probeset_id")
+    rows = [line.split("\t") for line in lines[1:] if line.strip()]
+    markers = [row[0] for row in rows if row]
+    _require_markers(markers, table, input_path)
+
+    source_offset = 1 if from_fmt == "AB" else 2
+    target_offset = 1 if to_fmt == "AB" else 2
+    genotypes_parsed = 0
+    genotypes_changed = 0
+    missing_or_unparsed_genotypes = 0
+    alleles_changed = 0
+    unknown_alleles = 0
+    out_lines = ["\t".join(header)]
+
+    for row in rows:
+        if len(row) != len(header):
+            raise ValueError(
+                f"{input_path} row for marker {row[0] if row else '<blank>'!r} "
+                f"has {len(row)} columns; expected {len(header)}"
+            )
+        marker = row[0]
+        new_row = list(row)
+        for index in range(1, len(row), 2):
+            gt = row[index if source_offset == 1 else index + 1]
+            pair = _split_genotype(gt, None)
+            if pair is None:
+                missing_or_unparsed_genotypes += 1
+                continue
+            genotypes_parsed += 1
+            converted_pair, pair_changed, pair_unknown = _convert_pair(
+                pair, marker, from_fmt, to_fmt, table
+            )
+            alleles_changed += pair_changed
+            unknown_alleles += pair_unknown
+            converted = "".join(converted_pair)
+            target_index = index if target_offset == 1 else index + 1
+            if converted != row[target_index]:
+                genotypes_changed += 1
+            new_row[target_index] = converted
+        out_lines.append("\t".join(new_row))
+
+    _write_lines(output_path, out_lines)
+    sample_count = (len(header) - 1) // 2
+    return ConvertStats(
+        input_path=str(input_path),
+        output_path=str(output_path),
+        rows_total=len(rows),
+        markers_total=_marker_count(markers),
+        genotype_cells_total=len(rows) * sample_count,
         genotypes_parsed=genotypes_parsed,
         genotypes_changed=genotypes_changed,
         missing_or_unparsed_genotypes=missing_or_unparsed_genotypes,
@@ -266,7 +515,7 @@ def convert_file(
     marker_col: str,
     genotype_col: str,
 ) -> ConvertStats:
-    """Convert one CSV genotype file in wide or long layout."""
+    """Convert one genotype file in a supported text layout."""
     layout = layout.lower()
     if layout == "wide":
         return convert_wide(
@@ -291,6 +540,32 @@ def convert_file(
             sample_col=sample_col,
             marker_col=marker_col,
             genotype_col=genotype_col,
+        )
+    if layout == "illumina-matrix":
+        return convert_illumina_matrix(
+            input_path=input_path,
+            output_path=output_path,
+            table=table,
+            from_fmt=from_fmt,
+            to_fmt=to_fmt,
+            in_sep=in_sep,
+            out_sep=out_sep,
+        )
+    if layout == "illumina-long":
+        return convert_illumina_long(
+            input_path=input_path,
+            output_path=output_path,
+            table=table,
+            from_fmt=from_fmt,
+            to_fmt=to_fmt,
+        )
+    if layout == "affymetrix-matrix":
+        return convert_affymetrix_matrix(
+            input_path=input_path,
+            output_path=output_path,
+            table=table,
+            from_fmt=from_fmt,
+            to_fmt=to_fmt,
         )
     raise ValueError(f"Unsupported genotype layout: {layout}")
 
