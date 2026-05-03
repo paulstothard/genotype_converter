@@ -118,8 +118,8 @@ fails if no source matches or if the best match is tied.
 That default inference chooses one manifest for the whole input. Use
 `--resolve-mixed-manifests` for files that intentionally contain markers from
 more than one manifest. Mixed-manifest mode writes a marker-resolution report
-with the selected manifest, candidate count, and selection reason for each
-marker.
+with the input path, selected manifest, candidate manifests, candidate count,
+and selection reason for each marker.
 
 The CSV batch summary includes:
 

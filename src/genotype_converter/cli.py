@@ -110,8 +110,9 @@ def _manifest_name_from_path(path: str) -> str:
     return Path(path).stem.replace(".", "_")
 
 
-def _write_marker_resolution_report(path: str, resolutions) -> None:
+def _write_marker_resolution_report(path: str, resolutions, marker_input_paths=None) -> None:
     fieldnames = [
+        "input_path",
         "marker_name",
         "status",
         "selected_manifest_name",
@@ -126,7 +127,11 @@ def _write_marker_resolution_report(path: str, resolutions) -> None:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
         for item in resolutions:
-            writer.writerow({field: getattr(item, field) for field in fieldnames})
+            row = {field: getattr(item, field) for field in fieldnames if field != "input_path"}
+            row["input_path"] = ";".join(
+                sorted((marker_input_paths or {}).get(item.marker_name, []))
+            )
+            writer.writerow(row)
 
 
 def _default_resolution_report_path(
@@ -161,6 +166,7 @@ def _load_conversion_table(
     manifest_name,
     context: str,
     marker_names: list[str] | None = None,
+    marker_input_paths: dict[str, set[str]] | None = None,
     resolve_mixed_manifests: bool = False,
     on_ambiguous_marker: str = "fail",
     resolution_report: str | None = None,
@@ -196,7 +202,11 @@ def _load_conversion_table(
                 on_ambiguous=on_ambiguous_marker,
             )
             if resolution_report:
-                _write_marker_resolution_report(resolution_report, resolutions)
+                _write_marker_resolution_report(
+                    resolution_report,
+                    resolutions,
+                    marker_input_paths=marker_input_paths,
+                )
                 click.echo(f"Marker resolution report: {resolution_report}")
             resolved = sum(1 for item in resolutions if item.status == "resolved")
             ambiguous = sum(1 for item in resolutions if item.status == "ambiguous")
@@ -251,7 +261,17 @@ def _csv_input_paths(genotypes, genotypes_dir, pattern) -> list[Path]:
 
 
 def _csv_marker_names(paths: list[Path], layout: str, sample_col: str, marker_col: str) -> list[str]:
+    return list(_csv_marker_source_map(paths, layout, sample_col, marker_col))
+
+
+def _csv_marker_source_map(
+    paths: list[Path],
+    layout: str,
+    sample_col: str,
+    marker_col: str,
+) -> dict[str, set[str]]:
     markers: list[str] = []
+    sources: dict[str, set[str]] = {}
     for path in paths:
         with path.open(newline="") as handle:
             lines = [line for line in handle if not line.startswith("#")]
@@ -268,7 +288,11 @@ def _csv_marker_names(paths: list[Path], layout: str, sample_col: str, marker_co
             markers.extend(row.get(marker_col, "") for row in reader)
         else:
             raise click.ClickException(f"Unsupported genotype layout: {layout}")
-    return [marker for marker in dict.fromkeys(markers) if marker]
+        for marker in markers:
+            if marker:
+                sources.setdefault(marker, set()).add(str(path))
+        markers = []
+    return sources
 
 
 def _plink_bfile_input_prefixes(bfile, bfile_dir, pattern) -> list[Path]:
@@ -285,7 +309,12 @@ def _plink_bfile_input_prefixes(bfile, bfile_dir, pattern) -> list[Path]:
 
 
 def _plink_bfile_marker_names(prefixes: list[Path]) -> list[str]:
+    return list(_plink_bfile_marker_source_map(prefixes))
+
+
+def _plink_bfile_marker_source_map(prefixes: list[Path]) -> dict[str, set[str]]:
     markers: list[str] = []
+    sources: dict[str, set[str]] = {}
     for prefix in prefixes:
         bim = prefix.with_suffix(".bim")
         if not bim.exists():
@@ -304,7 +333,8 @@ def _plink_bfile_marker_names(prefixes: list[Path]) -> list[str]:
                         f"{bim} line {line_number} has {len(fields)} fields; expected 6"
                     )
                 markers.append(fields[1])
-    return [marker for marker in dict.fromkeys(markers) if marker]
+                sources.setdefault(fields[1], set()).add(str(prefix))
+    return sources
 
 
 def _plink_pfile_input_prefixes(pfile, pfile_dir, pattern) -> list[Path]:
@@ -321,7 +351,12 @@ def _plink_pfile_input_prefixes(pfile, pfile_dir, pattern) -> list[Path]:
 
 
 def _plink_pfile_marker_names(prefixes: list[Path]) -> list[str]:
+    return list(_plink_pfile_marker_source_map(prefixes))
+
+
+def _plink_pfile_marker_source_map(prefixes: list[Path]) -> dict[str, set[str]]:
     markers: list[str] = []
+    sources: dict[str, set[str]] = {}
     for prefix in prefixes:
         pvar = prefix.with_suffix(".pvar")
         if not pvar.exists():
@@ -354,7 +389,8 @@ def _plink_pfile_marker_names(prefixes: list[Path]) -> list[str]:
                         f"{pvar} line {line_number} has too few fields for ID column"
                     )
                 markers.append(fields[indexes["ID"]])
-    return [marker for marker in dict.fromkeys(markers) if marker]
+                sources.setdefault(fields[indexes["ID"]], set()).add(str(prefix))
+    return sources
 
 
 @main.command("build")
@@ -693,13 +729,15 @@ def convert_cmd(genotypes, genotypes_dir, pattern, lookup, database, species,
     to_fmt = to_fmt.upper()
     _require_one_input(genotypes, genotypes_dir, "--genotypes", "--genotypes-dir")
     marker_names = None
+    marker_sources = None
     if database and (not manifest_name or resolve_mixed_manifests):
-        marker_names = _csv_marker_names(
+        marker_sources = _csv_marker_source_map(
             _csv_input_paths(genotypes, genotypes_dir, pattern),
             layout=layout,
             sample_col=sample_col,
             marker_col=marker_col,
         )
+        marker_names = list(marker_sources)
     if database and resolve_mixed_manifests and not resolution_report:
         resolution_report = _default_resolution_report_path(
             output=output,
@@ -718,6 +756,7 @@ def convert_cmd(genotypes, genotypes_dir, pattern, lookup, database, species,
         manifest_name=manifest_name,
         context="CSV",
         marker_names=marker_names,
+        marker_input_paths=marker_sources,
         resolve_mixed_manifests=resolve_mixed_manifests,
         on_ambiguous_marker=on_ambiguous_marker,
         resolution_report=resolution_report,
@@ -818,10 +857,12 @@ def convert_plink_cmd(bfile, bfile_dir, pattern, lookup, database, species,
     """Convert allele labels in a PLINK bed/bim/fam fileset."""
     _require_one_input(bfile, bfile_dir, "--bfile", "--bfile-dir")
     marker_names = None
+    marker_sources = None
     if database and (not manifest_name or resolve_mixed_manifests):
-        marker_names = _plink_bfile_marker_names(
+        marker_sources = _plink_bfile_marker_source_map(
             _plink_bfile_input_prefixes(bfile, bfile_dir, pattern)
         )
+        marker_names = list(marker_sources)
     if database and resolve_mixed_manifests and not resolution_report:
         resolution_report = _default_resolution_report_path(
             output=None,
@@ -840,6 +881,7 @@ def convert_plink_cmd(bfile, bfile_dir, pattern, lookup, database, species,
         manifest_name=manifest_name,
         context="PLINK",
         marker_names=marker_names,
+        marker_input_paths=marker_sources,
         resolve_mixed_manifests=resolve_mixed_manifests,
         on_ambiguous_marker=on_ambiguous_marker,
         resolution_report=resolution_report,
@@ -931,10 +973,12 @@ def convert_pfile_cmd(pfile, pfile_dir, pattern, lookup, database, species,
     """Convert allele labels in a PLINK 2 pgen/pvar/psam fileset."""
     _require_one_input(pfile, pfile_dir, "--pfile", "--pfile-dir")
     marker_names = None
+    marker_sources = None
     if database and (not manifest_name or resolve_mixed_manifests):
-        marker_names = _plink_pfile_marker_names(
+        marker_sources = _plink_pfile_marker_source_map(
             _plink_pfile_input_prefixes(pfile, pfile_dir, pattern)
         )
+        marker_names = list(marker_sources)
     if database and resolve_mixed_manifests and not resolution_report:
         resolution_report = _default_resolution_report_path(
             output=None,
@@ -953,6 +997,7 @@ def convert_pfile_cmd(pfile, pfile_dir, pattern, lookup, database, species,
         manifest_name=manifest_name,
         context="PLINK 2",
         marker_names=marker_names,
+        marker_input_paths=marker_sources,
         resolve_mixed_manifests=resolve_mixed_manifests,
         on_ambiguous_marker=on_ambiguous_marker,
         resolution_report=resolution_report,

@@ -191,6 +191,8 @@ resolved, the default behavior is to fail. Use `--on-ambiguous-marker skip` to
 leave unresolved markers unchanged instead. A marker-resolution CSV is written
 automatically, or can be placed explicitly with `--resolution-report`.
 
+A tiny runnable example is provided in `examples/mixed_manifests/`.
+
 ## Source Folder Discovery
 
 Source folders can be inspected without running a build:

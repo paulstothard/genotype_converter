@@ -419,6 +419,81 @@ def test_convert_database_resolves_mixed_manifests_per_marker(
     snp2 = next(row for row in report_rows if row["marker_name"] == "SNP2")
     assert snp2["selected_manifest_name"] == "panel_a"
     assert snp2["candidate_count"] == "2"
+    assert snp2["input_path"] == str(input_csv)
+
+
+def test_convert_database_mixed_manifest_batch_report_tracks_input_paths(
+    pipeline_output, tmp_path
+):
+    db_path = tmp_path / "conversion.sqlite"
+    lookup = pipeline_output / "manifest.reference.lookup.csv"
+    panel_a = tmp_path / "panel_a.lookup.csv"
+    panel_b = tmp_path / "panel_b.lookup.csv"
+    input_dir = tmp_path / "genotypes"
+    out_dir = tmp_path / "converted"
+    input_dir.mkdir()
+    _write_lookup_subset(lookup, panel_a, {"SNP1", "SNP2", "SNP4"})
+    _write_lookup_subset(
+        lookup,
+        panel_b,
+        {"SNP2", "SNP3"},
+        overrides={"SNP2": {"A_in_PLUS": "C", "B_in_PLUS": "A"}},
+    )
+    (input_dir / "panel_a_like.csv").write_text("sample_id,SNP1,SNP2,SNP4\nS1,A/G,A/C,A/G\n")
+    (input_dir / "panel_b_like.csv").write_text("sample_id,SNP2,SNP3\nS2,A/C,A/C\n")
+    runner = CliRunner()
+
+    for manifest_name, path in [("panel_a", panel_a), ("panel_b", panel_b)]:
+        import_result = runner.invoke(
+            main,
+            [
+                "db",
+                "import-lookup",
+                "--database",
+                str(db_path),
+                "--lookup",
+                str(path),
+                "--species",
+                "bos_taurus",
+                "--assembly",
+                "ARS_UCD_v2_0",
+                "--manifest-name",
+                manifest_name,
+            ],
+        )
+        assert import_result.exit_code == 0, import_result.output
+
+    result = runner.invoke(
+        main,
+        [
+            "convert",
+            "--genotypes-dir",
+            str(input_dir),
+            "--database",
+            str(db_path),
+            "--species",
+            "bos_taurus",
+            "--assembly",
+            "ARS_UCD_v2_0",
+            "--resolve-mixed-manifests",
+            "--on-ambiguous-marker",
+            "skip",
+            "--from-format",
+            "TOP",
+            "--to-format",
+            "PLUS",
+            "--outdir",
+            str(out_dir),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    report = out_dir / "manifest_resolution.csv"
+    assert report.is_file()
+    report_rows = list(csv.DictReader(report.read_text().splitlines()))
+    snp2 = next(row for row in report_rows if row["marker_name"] == "SNP2")
+    assert str(input_dir / "panel_a_like.csv") in snp2["input_path"]
+    assert str(input_dir / "panel_b_like.csv") in snp2["input_path"]
 
 
 def test_convert_database_mixed_manifest_mode_fails_on_ambiguous_marker(

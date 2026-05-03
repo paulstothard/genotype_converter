@@ -22,3 +22,19 @@ def test_database_source_fixture_layout_is_available():
         manifest_markers = {row["Name"] for row in csv.DictReader(handle)}
 
     assert expected_markers == manifest_markers
+
+
+def test_mixed_manifest_example_files_are_available():
+    root = Path("examples/mixed_manifests")
+
+    assert (root / "README.md").is_file()
+    assert (root / "panel_a.lookup.csv").is_file()
+    assert (root / "panel_b.lookup.csv").is_file()
+    assert (root / "mixed_genotypes.csv").is_file()
+
+    with (root / "panel_a.lookup.csv").open(newline="") as handle:
+        panel_a_markers = {row["marker_name"] for row in csv.DictReader(handle)}
+    with (root / "panel_b.lookup.csv").open(newline="") as handle:
+        panel_b_markers = {row["marker_name"] for row in csv.DictReader(handle)}
+
+    assert "SNP_SHARED" in panel_a_markers & panel_b_markers

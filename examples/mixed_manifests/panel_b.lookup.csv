@@ -1,0 +1,4 @@
+marker_name,alt_marker_name,chromosome,position,ref_allele,alt_allele,determination_type,A_in_AB,B_in_AB,A_in_TOP,B_in_TOP,A_in_FORWARD,B_in_FORWARD,A_in_DESIGN,B_in_DESIGN,A_in_PLUS,B_in_PLUS,A_vcf,B_vcf
+SNP_SHARED,,2,900,A,C,snp_probe_adjacent,A,B,A,C,A,C,A,C,A,C,REF,ALT
+SNP_B_ONLY,,2,950,G,A,snp_probe_adjacent,A,B,G,A,G,A,G,A,G,A,REF,ALT
+SNP_B_NEARBY,,2,990,T,C,snp_probe_adjacent,A,B,T,C,T,C,T,C,T,C,REF,ALT

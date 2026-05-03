@@ -365,6 +365,7 @@ use `--resolve-mixed-manifests`. That mode resolves rules per marker and writes
 a marker-resolution report. Conflicting duplicate marker rules fail by default
 unless local marker context identifies one manifest clearly; use
 `--on-ambiguous-marker skip` to leave unresolved markers unchanged.
+See `examples/mixed_manifests/` for a small runnable mixed-manifest example.
 
 To inspect a proposed source folder without running a build:
 
