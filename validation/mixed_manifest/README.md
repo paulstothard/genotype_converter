@@ -22,6 +22,8 @@ validation/mixed_manifest/
           <ARS-UCD1.2-reference>.fa
         ARS_UCD_v2_0/
           <ARS-UCD-v2.0-reference>.fa
+        UMD3_1/
+          <UMD3.1-reference>.fa
       genotypes/
         <cattle-genotype-file-or-folder-inputs>
     sus_scrofa/
@@ -48,9 +50,9 @@ Use stable scientific species labels for folder names:
 - pig or porcine: `sus_scrofa`
 
 Put manifests directly under the species, independent of reference genomes. Put
-reference genomes under `references/<assembly>/`, for example `ARS_UCD_v2_0`,
-`ARS_UCD1_2`, or `Sscrofa11_1`. The CLI `--species` and `--assembly` values
-must exactly match these folder names.
+reference genomes under `references/<assembly>/`, for example `ARS_UCD1_2`,
+`ARS_UCD_v2_0`, `UMD3_1`, or `Sscrofa11_1`. The CLI `--species` and
+`--assembly` values must exactly match these folder names.
 
 Each `sources/<species>/` folder can contain many manifests and many reference
 genomes. The database builder generates conversion information for every
@@ -73,6 +75,30 @@ mixing them in one folder.
 
 If a reference is supplied as multiple FASTA files, make a single combined FASTA
 for this validation workspace before building the database.
+
+## Download Reference Genomes
+
+The helper script downloads NCBI RefSeq genome FASTA files and filters them to
+assembled molecules only. That keeps chromosomes and assembled sex chromosomes
+where they are part of the assembly, while excluding unplaced and unlocalized
+contigs.
+
+```bash
+conda activate genotype-converter-env
+
+python validation/mixed_manifest/download_references.py
+```
+
+The current downloads are:
+
+| Species folder | Reference folder | NCBI assembly | RefSeq accession |
+| --- | --- | --- | --- |
+| `bos_taurus` | `ARS_UCD1_2` | ARS-UCD1.2 | `GCF_002263795.1` |
+| `bos_taurus` | `ARS_UCD_v2_0` | ARS-UCD2.0 | `GCF_002263795.3` |
+| `bos_taurus` | `UMD3_1` | Bos_taurus_UMD_3.1 | `GCF_000003055.4` |
+| `sus_scrofa` | `Sscrofa11_1` | Sscrofa11.1 | `GCF_000003025.6` |
+
+The downloaded FASTA and assembly report files are ignored by Git.
 
 ## Build The SQLite Database
 
