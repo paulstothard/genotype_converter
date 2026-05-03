@@ -7,6 +7,7 @@ import pytest
 
 from genotype_converter.convert_genotypes import (
     _split_genotype,
+    convert_batch,
     convert_long,
     convert_wide,
     load_lookup_table,
@@ -54,7 +55,7 @@ def test_convert_wide_top_to_plus(table, tmp_path):
     in_file.write_text(input_data)
     out_file = tmp_path / "out.csv"
 
-    convert_wide(
+    stats = convert_wide(
         input_path=str(in_file),
         output_path=str(out_file),
         table=table,
@@ -71,6 +72,10 @@ def test_convert_wide_top_to_plus(table, tmp_path):
     # SNP2: TOP_A=A→PLUS_A=T, TOP_B=C→PLUS_B=G
     assert rows[0]["SNP2"] == "T/G"
     assert rows[1]["SNP2"] == "G/G"
+    assert stats.genotype_cells_total == 4
+    assert stats.genotypes_changed == 2
+    assert stats.alleles_changed == 4
+    assert stats.unknown_alleles == 0
 
 
 def test_convert_wide_missing_passthrough(table, tmp_path):
@@ -130,7 +135,7 @@ def test_convert_long(table, tmp_path):
     in_file.write_text(input_data)
     out_file = tmp_path / "long_out.csv"
 
-    convert_long(
+    stats = convert_long(
         input_path=str(in_file),
         output_path=str(out_file),
         table=table,
@@ -147,6 +152,9 @@ def test_convert_long(table, tmp_path):
     assert rows[0]["genotype"] == "T/G"
     # SNP3: same logic
     assert rows[1]["genotype"] == "T/G"
+    assert stats.genotype_cells_total == 2
+    assert stats.genotypes_changed == 2
+    assert stats.alleles_changed == 4
 
 
 def test_convert_long_vcf_output(table, tmp_path):
@@ -170,6 +178,102 @@ def test_convert_long_vcf_output(table, tmp_path):
     rows = list(csv.DictReader(out_file.read_text().splitlines()))
     assert rows[0]["genotype"] == "REF/ALT"
     assert rows[1]["genotype"] == "ALT/REF"
+
+
+def test_convert_batch_wide_top_to_plus(table, tmp_path):
+    input_dir = tmp_path / "genotypes"
+    input_dir.mkdir()
+    (input_dir / "herd_a.csv").write_text("sample_id,SNP1,SNP2\nS1,A/G,A/C\n")
+    (input_dir / "herd_b.csv").write_text("sample_id,SNP1,SNP2\nS2,G/G,C/C\n")
+    (input_dir / "notes.txt").write_text("not a genotype file\n")
+    out_dir = tmp_path / "converted"
+
+    stats = convert_batch(
+        input_dir=str(input_dir),
+        output_dir=str(out_dir),
+        pattern="*.csv",
+        suffix=".plus.csv",
+        overwrite=False,
+        table=table,
+        from_fmt="TOP",
+        to_fmt="PLUS",
+        layout="wide",
+        in_sep="/",
+        out_sep="/",
+        sample_col="sample_id",
+        marker_col="marker_name",
+        genotype_col="genotype",
+    )
+
+    assert stats.files_total == 2
+    assert stats.files_converted == 2
+    assert [Path(path).name for path in stats.output_paths] == [
+        "herd_a.plus.csv",
+        "herd_b.plus.csv",
+    ]
+    assert Path(stats.summary_path).name == "conversion_summary.csv"
+    rows_a = list(csv.DictReader((out_dir / "herd_a.plus.csv").read_text().splitlines()))
+    rows_b = list(csv.DictReader((out_dir / "herd_b.plus.csv").read_text().splitlines()))
+    summary_rows = list(csv.DictReader((out_dir / "conversion_summary.csv").read_text().splitlines()))
+    assert rows_a[0]["SNP1"] == "A/G"
+    assert rows_a[0]["SNP2"] == "T/G"
+    assert rows_b[0]["SNP2"] == "G/G"
+    assert [Path(row["output_path"]).name for row in summary_rows] == [
+        "herd_a.plus.csv",
+        "herd_b.plus.csv",
+    ]
+    assert summary_rows[0]["genotype_cells_total"] == "2"
+    assert summary_rows[0]["genotypes_changed"] == "1"
+
+
+def test_convert_batch_refuses_overwrite(table, tmp_path):
+    input_dir = tmp_path / "genotypes"
+    input_dir.mkdir()
+    (input_dir / "herd.csv").write_text("sample_id,SNP1\nS1,A/G\n")
+    out_dir = tmp_path / "converted"
+    out_dir.mkdir()
+    (out_dir / "herd.converted.csv").write_text("existing\n")
+
+    with pytest.raises(FileExistsError, match="already exists"):
+        convert_batch(
+            input_dir=str(input_dir),
+            output_dir=str(out_dir),
+            pattern="*.csv",
+            suffix=".converted.csv",
+            overwrite=False,
+            table=table,
+            from_fmt="TOP",
+            to_fmt="PLUS",
+            layout="wide",
+            in_sep="/",
+            out_sep="/",
+            sample_col="sample_id",
+            marker_col="marker_name",
+            genotype_col="genotype",
+        )
+
+
+def test_convert_batch_requires_matching_files(table, tmp_path):
+    input_dir = tmp_path / "genotypes"
+    input_dir.mkdir()
+
+    with pytest.raises(ValueError, match="No genotype files matched"):
+        convert_batch(
+            input_dir=str(input_dir),
+            output_dir=str(tmp_path / "converted"),
+            pattern="*.csv",
+            suffix=".converted.csv",
+            overwrite=False,
+            table=table,
+            from_fmt="TOP",
+            to_fmt="PLUS",
+            layout="wide",
+            in_sep="/",
+            out_sep="/",
+            sample_col="sample_id",
+            marker_col="marker_name",
+            genotype_col="genotype",
+        )
 
 
 def test_convert_wide_requires_sample_column(table, tmp_path):

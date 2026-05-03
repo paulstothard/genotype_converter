@@ -49,9 +49,12 @@ Possible commands:
 ```bash
 genotype-converter db init --database genotype_converter.sqlite
 
-genotype-converter db build \
-  --source-root database_sources \
-  --database genotype_converter.sqlite
+genotype-converter db import-lookup \
+  --database genotype_converter.sqlite \
+  --lookup manifest.reference.lookup.csv \
+  --species bos_taurus \
+  --assembly ARS_UCD_v2_0 \
+  --manifest-name bovinehd_manifest_b
 
 genotype-converter db list-species --database genotype_converter.sqlite
 genotype-converter db list-assemblies --database genotype_converter.sqlite --species bos_taurus
@@ -71,11 +74,29 @@ The exact command names can change, but the database should have clear
 maintenance operations: initialize, build/update, inspect/list, validate, and
 possibly remove stale manifest entries.
 
+Stage 1 is implemented for existing lookup files:
+
+- initialize a SQLite database
+- import a built lookup CSV with species, assembly, and manifest provenance
+- list species, assemblies, and imported manifests
+- query rules for a marker
+- export marker query results as table, CSV, or JSON
+- discover source-folder contents without running build
+
+Stage 2 has started for CSV conversion:
+
+- `genotype-converter convert` can use `--database` instead of `--lookup`
+- `--species`, `--assembly`, and `--manifest-name` are required in database mode
+- PLINK commands still use lookup CSV files
+
+The database still does not run `build` from source folders. Manifest inference
+from neighboring markers is not implemented.
+
 ### Duplicate Marker Names
 
 The same marker name can appear in multiple manifests with different conversion
 rules. The database should not collapse those records into one unqualified rule.
-It should retain at least:
+The current schema retains:
 
 - marker name
 - manifest/panel name
@@ -87,6 +108,9 @@ It should retain at least:
 - determination type
 - source file checksums
 - build timestamp and tool version
+
+Marker names are unique only within one imported lookup source. Querying a
+marker without `--manifest-name` may return multiple rows, one per manifest.
 
 When a genotype file contains duplicate-rule markers and the user has not
 specified a manifest, the converter could infer the most likely manifest context
@@ -126,9 +150,43 @@ many species, assemblies, manifests, or genotype batches.
 
 ### Batch Conversion
 
-Add support for converting whole folders of genotype files.
+Lookup-file batch conversion is now supported for CSV wide, CSV long, PLINK 1
+binary filesets, and PLINK 2 filesets. Database-backed batch conversion remains
+planned.
 
-Possible command shape:
+Current lookup-file command shape:
+
+```bash
+genotype-converter convert \
+  --genotypes-dir genotypes/ \
+  --pattern "*.csv" \
+  --lookup manifest.reference.lookup.csv \
+  --from-format TOP \
+  --to-format PLUS \
+  --outdir converted/
+```
+
+```bash
+genotype-converter convert-plink \
+  --bfile-dir plink_files/ \
+  --pattern "*.bed" \
+  --lookup manifest.reference.lookup.csv \
+  --from-format TOP \
+  --to-format PLUS \
+  --outdir converted/
+```
+
+```bash
+genotype-converter convert-pfile \
+  --pfile-dir pfiles/ \
+  --pattern "*.pgen" \
+  --lookup manifest.reference.lookup.csv \
+  --from-format TOP \
+  --to-format PLUS \
+  --outdir converted/
+```
+
+Database-backed batch conversion could use this shape:
 
 ```bash
 genotype-converter convert \
@@ -142,13 +200,36 @@ genotype-converter convert \
   --outdir converted/
 ```
 
-Batch conversion should:
+Batch conversion does:
 
 - preserve filenames or use a predictable suffix
-- produce one summary report for the batch
-- report missing, ambiguous, and unconverted markers per file
-- support lookup-file mode and database mode
 - avoid overwriting outputs unless explicitly requested
+- write `conversion_summary.csv` for each batch
+
+Batch conversion still needs to:
+
+- report missing, ambiguous, and unconverted markers per file
+- support database mode
+
+### Database Test Fixture
+
+The repository includes a tiny source-folder fixture at
+`tests/data/database_sources/`. It is intended for future SQLite database tests
+and mirrors the proposed user-facing folder organization:
+
+```text
+tests/data/database_sources/
+  bos_taurus/
+    ARS_UCD_v2_0/
+      manifests/
+      references/
+      genotypes/
+      expected/
+```
+
+Future database code should first prove that it can discover and build from this
+small fixture. Do not use the full bovine validation panel as the first database
+test target.
 
 ### Design Questions To Resolve
 
@@ -162,4 +243,3 @@ Batch conversion should:
 - How to expose ambiguity reports in a machine-readable form.
 - Whether database building should require reference FASTA files every time or
   can import already-built lookup files.
-

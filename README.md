@@ -189,10 +189,10 @@ Supported genotype file layouts:
 
 | Command | Input | Output | Notes |
 |---|---|---|---|
-| `convert --layout wide` | CSV, one sample per row and one marker per column | CSV | Best for small datasets, examples, and debugging. |
-| `convert --layout long` | CSV, one sample-marker genotype per row | CSV | Useful for database-style genotype tables. |
-| `convert-plink` | PLINK 1 binary fileset: `.bed`, `.bim`, `.fam` | PLINK 1 binary fileset | Rewrites allele labels in `.bim`; copies `.bed` and `.fam` unchanged. |
-| `convert-pfile` | PLINK 2 fileset: `.pgen`, `.pvar`, `.psam` | PLINK 2 fileset | Rewrites biallelic `REF`/`ALT` labels in `.pvar`; copies `.pgen` and `.psam` unchanged. |
+| `convert --layout wide` | CSV, one sample per row and one marker per column | CSV | Best for small datasets, examples, and debugging. Can also process a folder of CSV files. |
+| `convert --layout long` | CSV, one sample-marker genotype per row | CSV | Useful for database-style genotype tables. Can also process a folder of CSV files. |
+| `convert-plink` | PLINK 1 binary fileset: `.bed`, `.bim`, `.fam` | PLINK 1 binary fileset | Rewrites allele labels in `.bim`; copies `.bed` and `.fam` unchanged. Can also process a folder of filesets. |
+| `convert-pfile` | PLINK 2 fileset: `.pgen`, `.pvar`, `.psam` | PLINK 2 fileset | Rewrites biallelic `REF`/`ALT` labels in `.pvar`; copies `.pgen` and `.psam` unchanged. Can also process a folder of filesets. |
 
 PLINK text formats such as `.ped/.map` are not converted directly. Convert them
 to PLINK binary with PLINK first, then use `convert-plink` or `convert-pfile`.
@@ -206,6 +206,25 @@ genotype-converter convert \
   --output converted.csv
 ```
 
+To convert a folder of CSV genotype files with the same layout:
+
+```bash
+genotype-converter convert \
+  --genotypes-dir genotype_files/ \
+  --pattern "*.csv" \
+  --lookup output/cattle/genome/manifest.genome.lookup.csv \
+  --from-format TOP \
+  --to-format PLUS \
+  --layout wide \
+  --outdir converted_genotype_files/
+```
+
+Batch conversion writes one output per input file using the default suffix
+`.converted.csv`, for example `sample.csv` becomes `sample.converted.csv`.
+It also writes `conversion_summary.csv` in the output directory with per-file
+conversion counts. Existing batch outputs are not overwritten unless
+`--overwrite` is supplied.
+
 ### PLINK 1 binary
 
 ```bash
@@ -217,6 +236,22 @@ genotype-converter convert-plink \
   --out mydata_plus
 ```
 
+To convert a folder of PLINK 1 binary filesets:
+
+```bash
+genotype-converter convert-plink \
+  --bfile-dir plink_files/ \
+  --pattern "*.bed" \
+  --lookup output/cattle/genome/manifest.genome.lookup.csv \
+  --from-format TOP \
+  --to-format PLUS \
+  --outdir converted_plink_files/
+```
+
+An input prefix `herd_a` produces `herd_a.converted.bed`,
+`herd_a.converted.bim`, and `herd_a.converted.fam` by default. Batch mode also
+writes `conversion_summary.csv`.
+
 ### PLINK 2 p-files
 
 ```bash
@@ -226,6 +261,78 @@ genotype-converter convert-pfile \
   --from-format TOP \
   --to-format PLUS \
   --out mydata_plus
+```
+
+To convert a folder of PLINK 2 filesets:
+
+```bash
+genotype-converter convert-pfile \
+  --pfile-dir pfiles/ \
+  --pattern "*.pgen" \
+  --lookup output/cattle/genome/manifest.genome.lookup.csv \
+  --from-format TOP \
+  --to-format PLUS \
+  --outdir converted_pfiles/
+```
+
+An input prefix `herd_a` produces `herd_a.converted.pgen`,
+`herd_a.converted.pvar`, and `herd_a.converted.psam` by default. Batch mode also
+writes `conversion_summary.csv`.
+
+### Optional SQLite database
+
+The lookup CSV workflow remains the main conversion path. For projects with many
+species, assemblies, or manifests, lookup files can also be imported into an
+optional SQLite database for inspection and CSV database-backed conversion.
+SQLite support uses Python's standard library; no extra package is required. See
+[SQLite Conversion Database](docs/database.md) for schema details.
+
+```bash
+genotype-converter db init --database genotype_converter.sqlite
+
+genotype-converter db import-lookup \
+  --database genotype_converter.sqlite \
+  --lookup output/cattle/genome/manifest.genome.lookup.csv \
+  --species bos_taurus \
+  --assembly ARS_UCD_v2_0 \
+  --manifest-name bovinehd_manifest_b
+
+genotype-converter db marker \
+  --database genotype_converter.sqlite \
+  --species bos_taurus \
+  --assembly ARS_UCD_v2_0 \
+  --marker SNP2 \
+  --format table
+```
+
+The database tracks manifest identity with each imported lookup source, so the
+same marker name can appear in multiple manifests without being merged into a
+single rule.
+
+CSV genotype conversion can read from the database when the manifest context is
+specified explicitly:
+
+```bash
+genotype-converter convert \
+  --genotypes mydata.csv \
+  --database genotype_converter.sqlite \
+  --species bos_taurus \
+  --assembly ARS_UCD_v2_0 \
+  --manifest-name bovinehd_manifest_b \
+  --from-format TOP \
+  --to-format PLUS \
+  --output converted.csv
+```
+
+Database-backed conversion currently applies to CSV `convert` only. PLINK
+commands still use `--lookup`.
+
+To inspect a proposed source folder without running a build:
+
+```bash
+genotype-converter db discover-sources \
+  --source-root database_sources \
+  --format table
 ```
 
 ---
@@ -311,6 +418,24 @@ sample_id,SNP1,SNP2
 SAMPLE001,A/B,A/A
 SAMPLE002,BB,AB
 ```
+
+### Batch CSV input
+
+```bash
+genotype-converter convert \
+  --genotypes-dir genotype_files/ \
+  --pattern "*.csv" \
+  --lookup output/test/reference/manifest.reference.lookup.csv \
+  --from-format TOP \
+  --to-format PLUS \
+  --layout wide \
+  --outdir converted_genotype_files/
+```
+
+For input files `herd_a.csv` and `herd_b.csv`, the default output names are
+`herd_a.converted.csv` and `herd_b.converted.csv`. Batch mode also writes
+`conversion_summary.csv` with row, genotype, and allele-count summaries for each
+input file.
 
 ### Long-format input
 

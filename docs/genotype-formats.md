@@ -22,10 +22,10 @@ whereas plus/minus is the genomic reference-strand convention.
 
 | Command | Input | Output | What Changes |
 |---|---|---|---|
-| `convert --layout wide` | CSV, one sample per row and one marker per column | CSV | Genotype cells are rewritten. |
-| `convert --layout long` | CSV, one sample-marker genotype per row | CSV | The genotype column is rewritten. |
-| `convert-plink` | PLINK 1 binary fileset: `.bed`, `.bim`, `.fam` | PLINK 1 binary fileset | Allele labels in `.bim` are rewritten; `.bed` and `.fam` are copied unchanged. |
-| `convert-pfile` | PLINK 2 fileset: `.pgen`, `.pvar`, `.psam` | PLINK 2 fileset | Biallelic allele labels in `.pvar` are rewritten; `.pgen` and `.psam` are copied unchanged. |
+| `convert --layout wide` | CSV, one sample per row and one marker per column | CSV | Genotype cells are rewritten. Single files and folders are supported. |
+| `convert --layout long` | CSV, one sample-marker genotype per row | CSV | The genotype column is rewritten. Single files and folders are supported. |
+| `convert-plink` | PLINK 1 binary fileset: `.bed`, `.bim`, `.fam` | PLINK 1 binary fileset | Allele labels in `.bim` are rewritten; `.bed` and `.fam` are copied unchanged. Single filesets and folders are supported. |
+| `convert-pfile` | PLINK 2 fileset: `.pgen`, `.pvar`, `.psam` | PLINK 2 fileset | Biallelic allele labels in `.pvar` are rewritten; `.pgen` and `.psam` are copied unchanged. Single filesets and folders are supported. |
 
 PLINK text formats such as `.ped/.map` are not converted directly. Convert them
 to PLINK binary with PLINK first, then use `convert-plink` or `convert-pfile`.
@@ -57,14 +57,73 @@ Options:
 | Flag | Default | Description |
 |---|---|---|
 | `--genotypes` | required | Input genotype CSV. |
-| `--lookup` | required | Lookup CSV from `build`. |
+| `--genotypes-dir` | unset | Directory of genotype CSV files. Use this instead of `--genotypes` for batch conversion. |
+| `--pattern` | `*.csv` | File pattern used with `--genotypes-dir`. |
+| `--lookup` | required unless `--database` is used | Lookup CSV from `build`. |
+| `--database` | unset | SQLite conversion database. CSV conversion only. |
+| `--species` | required with `--database` | Species name for database-backed conversion. |
+| `--assembly` | required with `--database` | Reference assembly name for database-backed conversion. |
+| `--manifest-name` | required with `--database` | Manifest or panel name for database-backed conversion. |
 | `--from-format` | required | Input encoding: `AB`, `TOP`, `FORWARD`, `DESIGN`, `PLUS`, or `VCF`. |
 | `--to-format` | required | Output encoding. |
-| `--output` | required | Output file path. |
+| `--output` | required for single-file mode | Output file path. |
+| `--outdir` | required for batch mode | Output directory for converted batch files. |
+| `--suffix` | `.converted.csv` | Filename suffix for batch outputs. |
+| `--overwrite` | off | Allow batch mode to replace existing outputs. |
 | `--layout` | `wide` | Input layout. |
 | `--in-sep` | auto | Allele separator in input. Auto-detects `/`, space, tab, or adjacent single-character alleles. |
 | `--out-sep` | `/` | Allele separator in output. |
 | `--sample-col` | `sample_id` | Column name identifying the sample. |
+
+Batch example:
+
+```bash
+genotype-converter convert \
+  --genotypes-dir genotype_files/ \
+  --pattern "*.csv" \
+  --lookup output/cattle/genome/manifest.genome.lookup.csv \
+  --from-format TOP \
+  --to-format PLUS \
+  --layout wide \
+  --outdir converted_genotype_files/
+```
+
+For an input named `sample.csv`, the default output is
+`sample.converted.csv`. Existing batch outputs are protected unless
+`--overwrite` is supplied. Batch mode also writes `conversion_summary.csv` in
+the output directory.
+
+CSV conversion can also use an SQLite database instead of `--lookup`:
+
+```bash
+genotype-converter convert \
+  --genotypes mydata_top.csv \
+  --database genotype_converter.sqlite \
+  --species bos_taurus \
+  --assembly ARS_UCD_v2_0 \
+  --manifest-name bovinehd_manifest_b \
+  --from-format TOP \
+  --to-format PLUS \
+  --layout wide \
+  --output mydata_plus.csv
+```
+
+Database-backed conversion currently requires an explicit `--manifest-name`.
+
+The CSV batch summary includes:
+
+| Column | Meaning |
+|---|---|
+| `input_path` | Input genotype CSV. |
+| `output_path` | Converted genotype CSV. |
+| `rows_total` | Input data rows processed. |
+| `markers_total` | Marker columns in wide layout, or distinct marker IDs in long layout. |
+| `genotype_cells_total` | Genotype cells considered for conversion. |
+| `genotypes_parsed` | Genotypes recognized as two allele labels. |
+| `genotypes_changed` | Genotype cells whose output value differs from input. |
+| `missing_or_unparsed_genotypes` | Missing or unrecognized genotype cells left unchanged. |
+| `alleles_changed` | Individual allele labels changed. |
+| `unknown_alleles` | Allele labels not found for that marker and input encoding. |
 
 ## CSV Long
 
@@ -173,13 +232,49 @@ Options:
 
 | Flag | Default | Description |
 |---|---|---|
-| `--bfile` | required | Input PLINK 1 binary prefix, without `.bed/.bim/.fam`. |
+| `--bfile` | required for single-fileset mode | Input PLINK 1 binary prefix, without `.bed/.bim/.fam`. |
+| `--bfile-dir` | unset | Directory of PLINK 1 binary filesets. Use this instead of `--bfile` for batch conversion. |
+| `--pattern` | `*.bed` | File pattern used with `--bfile-dir`. The pattern should match `.bed` files. |
 | `--lookup` | required | Lookup CSV from `build`. |
 | `--from-format` | required | Input `.bim` allele encoding: `AB`, `TOP`, `FORWARD`, `DESIGN`, or `PLUS`. |
 | `--to-format` | required | Output `.bim` allele encoding: `AB`, `TOP`, `FORWARD`, `DESIGN`, or `PLUS`. |
-| `--out` | required | Output PLINK 1 binary prefix. |
+| `--out` | required for single-fileset mode | Output PLINK 1 binary prefix. |
+| `--outdir` | required for batch mode | Output directory for converted PLINK 1 filesets. |
+| `--suffix` | `.converted` | Filename suffix for batch output prefixes. |
+| `--overwrite` | off | Allow batch mode to replace existing outputs. |
 | `--update-position` / `--keep-position` | keep | Also replace `.bim` chromosome and base-pair columns from the lookup table. |
 | `--require-all-markers` / `--allow-missing-markers` | require | Fail if any `.bim` marker is absent from the lookup table. |
+
+Batch example:
+
+```bash
+genotype-converter convert-plink \
+  --bfile-dir plink_files/ \
+  --pattern "*.bed" \
+  --lookup output/cattle/genome/manifest.genome.lookup.csv \
+  --from-format TOP \
+  --to-format PLUS \
+  --outdir converted_plink_files/
+```
+
+For an input fileset prefix `sample`, the default outputs are
+`sample.converted.bed`, `sample.converted.bim`, and `sample.converted.fam`.
+Existing batch outputs are protected unless `--overwrite` is supplied. Batch
+mode also writes `conversion_summary.csv` in the output directory.
+
+The PLINK batch summary includes:
+
+| Column | Meaning |
+|---|---|
+| `input_prefix` | Input fileset prefix. |
+| `output_prefix` | Converted fileset prefix. |
+| `variants_total` | Variant rows processed in `.bim` or `.pvar`. |
+| `variants_converted` | Variant rows with marker IDs found in the lookup table. |
+| `variants_missing_lookup` | Variant rows whose marker IDs were not found. |
+| `alleles_changed` | Individual allele labels changed. |
+| `genotype_path` | Output `.bed` or `.pgen` path. |
+| `variant_path` | Output `.bim` or `.pvar` path. |
+| `sample_path` | Output `.fam` or `.psam` path. |
 
 `VCF` is not a `convert-plink` target because PLINK `.bim` allele columns should
 contain allele labels such as `A`, `C`, `I`, or `D`, not `REF` or `ALT`
@@ -238,13 +333,36 @@ Options:
 
 | Flag | Default | Description |
 |---|---|---|
-| `--pfile` | required | Input PLINK 2 prefix, without `.pgen/.pvar/.psam`. |
+| `--pfile` | required for single-fileset mode | Input PLINK 2 prefix, without `.pgen/.pvar/.psam`. |
+| `--pfile-dir` | unset | Directory of PLINK 2 filesets. Use this instead of `--pfile` for batch conversion. |
+| `--pattern` | `*.pgen` | File pattern used with `--pfile-dir`. The pattern should match `.pgen` files. |
 | `--lookup` | required | Lookup CSV from `build`. |
 | `--from-format` | required | Input `.pvar` allele encoding: `AB`, `TOP`, `FORWARD`, `DESIGN`, or `PLUS`. |
 | `--to-format` | required | Output `.pvar` allele encoding: `AB`, `TOP`, `FORWARD`, `DESIGN`, or `PLUS`. |
-| `--out` | required | Output PLINK 2 prefix. |
+| `--out` | required for single-fileset mode | Output PLINK 2 prefix. |
+| `--outdir` | required for batch mode | Output directory for converted PLINK 2 filesets. |
+| `--suffix` | `.converted` | Filename suffix for batch output prefixes. |
+| `--overwrite` | off | Allow batch mode to replace existing outputs. |
 | `--update-position` / `--keep-position` | keep | Also replace `.pvar` chromosome and base-pair columns from the lookup table. |
 | `--require-all-markers` / `--allow-missing-markers` | require | Fail if any `.pvar` marker is absent from the lookup table. |
+
+Batch example:
+
+```bash
+genotype-converter convert-pfile \
+  --pfile-dir pfiles/ \
+  --pattern "*.pgen" \
+  --lookup output/cattle/genome/manifest.genome.lookup.csv \
+  --from-format TOP \
+  --to-format PLUS \
+  --outdir converted_pfiles/
+```
+
+For an input fileset prefix `sample`, the default outputs are
+`sample.converted.pgen`, `sample.converted.pvar`, and `sample.converted.psam`.
+Existing batch outputs are protected unless `--overwrite` is supplied. Batch
+mode also writes `conversion_summary.csv` in the output directory using the
+PLINK batch summary columns described above.
 
 `VCF` is not a `convert-pfile` target. The command rewrites allele labels in the
 existing `.pvar`; it does not transform PLINK genotype records into a VCF

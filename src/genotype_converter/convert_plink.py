@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
@@ -31,6 +32,21 @@ class PlinkConvertStats:
     @property
     def fam_path(self) -> str:
         return self.sample_path
+
+
+@dataclass
+class PlinkBatchConvertStats:
+    filesets_total: int
+    filesets_converted: int
+    stats: list[PlinkConvertStats]
+    summary_path: str
+
+    @property
+    def output_prefixes(self) -> list[str]:
+        return [
+            str(Path(item.genotype_path).with_suffix(""))
+            for item in self.stats
+        ]
 
 
 def _prefix_path(prefix: str, suffix: str) -> Path:
@@ -71,6 +87,75 @@ def _require_pfile(prefix: str) -> tuple[Path, Path, Path]:
             f"Missing: {', '.join(missing)}"
         )
     return pgen, pvar, psam
+
+
+def _discover_prefixes(input_dir: str, pattern: str, suffix: str, label: str) -> list[Path]:
+    source_dir = Path(input_dir)
+    if not source_dir.is_dir():
+        raise ValueError(f"{label} input directory does not exist: {input_dir}")
+    paths = sorted(path for path in source_dir.glob(pattern) if path.is_file())
+    prefixes = [path.with_suffix("") for path in paths if path.suffix == f".{suffix}"]
+    if not prefixes:
+        raise ValueError(
+            f"No {label} filesets matched pattern {pattern!r} in {input_dir}. "
+            f"The pattern should match .{suffix} files."
+        )
+    return prefixes
+
+
+def _require_batch_outputs_available(
+    output_prefixes: list[Path],
+    suffixes: tuple[str, str, str],
+    overwrite: bool,
+) -> None:
+    if overwrite:
+        return
+    existing: list[str] = []
+    for prefix in output_prefixes:
+        existing.extend(str(_prefix_path(str(prefix), suffix)) for suffix in suffixes
+                        if _prefix_path(str(prefix), suffix).exists())
+    if existing:
+        preview = ", ".join(existing[:10])
+        more = f" and {len(existing) - 10} more" if len(existing) > 10 else ""
+        raise FileExistsError(
+            f"Output file(s) already exist: {preview}{more}. "
+            "Use overwrite=True to replace them."
+        )
+
+
+def _write_plink_batch_summary(
+    summary_path: Path,
+    input_prefixes: list[Path],
+    stats: list[PlinkConvertStats],
+) -> None:
+    fieldnames = [
+        "input_prefix",
+        "output_prefix",
+        "variants_total",
+        "variants_converted",
+        "variants_missing_lookup",
+        "alleles_changed",
+        "genotype_path",
+        "variant_path",
+        "sample_path",
+    ]
+    with summary_path.open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        for input_prefix, item in zip(input_prefixes, stats):
+            writer.writerow(
+                {
+                    "input_prefix": str(input_prefix),
+                    "output_prefix": str(Path(item.genotype_path).with_suffix("")),
+                    "variants_total": item.variants_total,
+                    "variants_converted": item.variants_converted,
+                    "variants_missing_lookup": item.variants_missing_lookup,
+                    "alleles_changed": item.alleles_changed,
+                    "genotype_path": item.genotype_path,
+                    "variant_path": item.variant_path,
+                    "sample_path": item.sample_path,
+                }
+            )
 
 
 def convert_plink_bfile(
@@ -162,6 +247,52 @@ def convert_plink_bfile(
         genotype_path=str(output_bed),
         variant_path=str(output_bim),
         sample_path=str(output_fam),
+    )
+
+
+def convert_plink_bfile_batch(
+    input_dir: str,
+    output_dir: str,
+    pattern: str,
+    suffix: str,
+    overwrite: bool,
+    table: dict,
+    from_fmt: str,
+    to_fmt: str,
+    *,
+    update_position: bool = False,
+    require_all_markers: bool = True,
+) -> PlinkBatchConvertStats:
+    """Convert every matching PLINK 1 binary fileset in a directory."""
+    input_prefixes = _discover_prefixes(input_dir, pattern, "bed", "PLINK binary")
+    out_dir = Path(output_dir)
+    output_prefixes = [out_dir / f"{prefix.name}{suffix}" for prefix in input_prefixes]
+    _require_batch_outputs_available(output_prefixes, ("bed", "bim", "fam"), overwrite)
+    summary_path = out_dir / "conversion_summary.csv"
+    if summary_path.exists() and not overwrite:
+        raise FileExistsError(
+            f"Output file already exists: {summary_path}. Use overwrite=True to replace it."
+        )
+
+    stats: list[PlinkConvertStats] = []
+    for input_prefix, output_prefix in zip(input_prefixes, output_prefixes):
+        stats.append(
+            convert_plink_bfile(
+                input_prefix=str(input_prefix),
+                output_prefix=str(output_prefix),
+                table=table,
+                from_fmt=from_fmt,
+                to_fmt=to_fmt,
+                update_position=update_position,
+                require_all_markers=require_all_markers,
+            )
+        )
+    _write_plink_batch_summary(summary_path, input_prefixes, stats)
+    return PlinkBatchConvertStats(
+        filesets_total=len(input_prefixes),
+        filesets_converted=len(stats),
+        stats=stats,
+        summary_path=str(summary_path),
     )
 
 
@@ -293,4 +424,50 @@ def convert_plink_pfile(
         genotype_path=str(output_pgen),
         variant_path=str(output_pvar),
         sample_path=str(output_psam),
+    )
+
+
+def convert_plink_pfile_batch(
+    input_dir: str,
+    output_dir: str,
+    pattern: str,
+    suffix: str,
+    overwrite: bool,
+    table: dict,
+    from_fmt: str,
+    to_fmt: str,
+    *,
+    update_position: bool = False,
+    require_all_markers: bool = True,
+) -> PlinkBatchConvertStats:
+    """Convert every matching PLINK 2 fileset in a directory."""
+    input_prefixes = _discover_prefixes(input_dir, pattern, "pgen", "PLINK 2")
+    out_dir = Path(output_dir)
+    output_prefixes = [out_dir / f"{prefix.name}{suffix}" for prefix in input_prefixes]
+    _require_batch_outputs_available(output_prefixes, ("pgen", "pvar", "psam"), overwrite)
+    summary_path = out_dir / "conversion_summary.csv"
+    if summary_path.exists() and not overwrite:
+        raise FileExistsError(
+            f"Output file already exists: {summary_path}. Use overwrite=True to replace it."
+        )
+
+    stats: list[PlinkConvertStats] = []
+    for input_prefix, output_prefix in zip(input_prefixes, output_prefixes):
+        stats.append(
+            convert_plink_pfile(
+                input_prefix=str(input_prefix),
+                output_prefix=str(output_prefix),
+                table=table,
+                from_fmt=from_fmt,
+                to_fmt=to_fmt,
+                update_position=update_position,
+                require_all_markers=require_all_markers,
+            )
+        )
+    _write_plink_batch_summary(summary_path, input_prefixes, stats)
+    return PlinkBatchConvertStats(
+        filesets_total=len(input_prefixes),
+        filesets_converted=len(stats),
+        stats=stats,
+        summary_path=str(summary_path),
     )
