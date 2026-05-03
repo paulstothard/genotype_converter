@@ -283,7 +283,7 @@ writes `conversion_summary.csv`.
 
 The lookup CSV workflow remains the main conversion path. For projects with many
 species, assemblies, or manifests, lookup files can also be imported into an
-optional SQLite database for inspection and CSV database-backed conversion.
+optional SQLite database for inspection and database-backed conversion.
 SQLite support uses Python's standard library; no extra package is required. See
 [SQLite Conversion Database](docs/database.md) for schema details.
 
@@ -324,8 +324,19 @@ genotype-converter convert \
   --output converted.csv
 ```
 
-Database-backed conversion currently applies to CSV `convert` only. PLINK
-commands still use `--lookup`.
+PLINK commands can also use the database with the same explicit context:
+
+```bash
+genotype-converter convert-plink \
+  --bfile mydata_top \
+  --database genotype_converter.sqlite \
+  --species bos_taurus \
+  --assembly ARS_UCD_v2_0 \
+  --manifest-name bovinehd_manifest_b \
+  --from-format TOP \
+  --to-format PLUS \
+  --out mydata_plus
+```
 
 To inspect a proposed source folder without running a build:
 

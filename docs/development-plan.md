@@ -83,11 +83,12 @@ Stage 1 is implemented for existing lookup files:
 - export marker query results as table, CSV, or JSON
 - discover source-folder contents without running build
 
-Stage 2 has started for CSV conversion:
+Stage 2 has explicit-context database conversion:
 
 - `genotype-converter convert` can use `--database` instead of `--lookup`
+- `genotype-converter convert-plink` can use `--database` instead of `--lookup`
+- `genotype-converter convert-pfile` can use `--database` instead of `--lookup`
 - `--species`, `--assembly`, and `--manifest-name` are required in database mode
-- PLINK commands still use lookup CSV files
 
 The database still does not run `build` from source folders. Manifest inference
 from neighboring markers is not implemented.

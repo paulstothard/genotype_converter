@@ -87,7 +87,7 @@ def _echo_rows(rows, fieldnames: list[str], output_format: str) -> None:
         click.echo("\t".join(str(row.get(field, "") or "") for field in fieldnames))
 
 
-def _load_csv_conversion_table(lookup, database, species, assembly, manifest_name):
+def _load_conversion_table(lookup, database, species, assembly, manifest_name, context: str):
     _require_one_input(lookup, database, "--lookup", "--database")
     if lookup:
         return load_lookup_table(lookup)
@@ -100,7 +100,7 @@ def _load_csv_conversion_table(lookup, database, species, assembly, manifest_nam
     ]
     if missing:
         raise click.UsageError(
-            f"{', '.join(missing)} required with --database for CSV conversion."
+            f"{', '.join(missing)} required with --database for {context} conversion."
         )
     try:
         return load_lookup_table_from_database(
@@ -361,12 +361,13 @@ def convert_cmd(genotypes, genotypes_dir, pattern, lookup, database, species,
     """
     from_fmt = from_fmt.upper()
     to_fmt = to_fmt.upper()
-    table = _load_csv_conversion_table(
+    table = _load_conversion_table(
         lookup=lookup,
         database=database,
         species=species,
         assembly=assembly,
         manifest_name=manifest_name,
+        context="CSV",
     )
 
     _require_one_input(genotypes, genotypes_dir, "--genotypes", "--genotypes-dir")
@@ -424,8 +425,16 @@ def convert_cmd(genotypes, genotypes_dir, pattern, lookup, database, species,
               help="Directory of PLINK binary filesets to convert")
 @click.option("--pattern", default="*.bed", show_default=True,
               help="File pattern used with --bfile-dir")
-@click.option("--lookup", required=True, type=click.Path(exists=True),
+@click.option("--lookup", required=False, type=click.Path(exists=True),
               help="Lookup CSV produced by the build command")
+@click.option("--database", required=False, type=click.Path(exists=True),
+              help="SQLite conversion database")
+@click.option("--species", required=False,
+              help="Species name for --database conversion")
+@click.option("--assembly", required=False,
+              help="Reference assembly name for --database conversion")
+@click.option("--manifest-name", required=False,
+              help="Manifest name for --database conversion")
 @click.option("--from-format", "from_fmt", required=True,
               type=click.Choice(["AB", "TOP", "FORWARD", "DESIGN", "PLUS"],
                                 case_sensitive=False),
@@ -446,11 +455,19 @@ def convert_cmd(genotypes, genotypes_dir, pattern, lookup, database, species,
               help="Also replace .bim chromosome/base-pair columns with lookup positions")
 @click.option("--require-all-markers/--allow-missing-markers", default=True, show_default=True,
               help="Fail if any .bim marker is absent from the lookup table")
-def convert_plink_cmd(bfile, bfile_dir, pattern, lookup, from_fmt, to_fmt,
-                      output_prefix, outdir, suffix, overwrite, update_position,
+def convert_plink_cmd(bfile, bfile_dir, pattern, lookup, database, species,
+                      assembly, manifest_name, from_fmt, to_fmt, output_prefix,
+                      outdir, suffix, overwrite, update_position,
                       require_all_markers):
     """Convert allele labels in a PLINK bed/bim/fam fileset."""
-    table = load_lookup_table(lookup)
+    table = _load_conversion_table(
+        lookup=lookup,
+        database=database,
+        species=species,
+        assembly=assembly,
+        manifest_name=manifest_name,
+        context="PLINK",
+    )
     _require_one_input(bfile, bfile_dir, "--bfile", "--bfile-dir")
 
     if bfile:
@@ -493,8 +510,16 @@ def convert_plink_cmd(bfile, bfile_dir, pattern, lookup, from_fmt, to_fmt,
               help="Directory of PLINK 2 filesets to convert")
 @click.option("--pattern", default="*.pgen", show_default=True,
               help="File pattern used with --pfile-dir")
-@click.option("--lookup", required=True, type=click.Path(exists=True),
+@click.option("--lookup", required=False, type=click.Path(exists=True),
               help="Lookup CSV produced by the build command")
+@click.option("--database", required=False, type=click.Path(exists=True),
+              help="SQLite conversion database")
+@click.option("--species", required=False,
+              help="Species name for --database conversion")
+@click.option("--assembly", required=False,
+              help="Reference assembly name for --database conversion")
+@click.option("--manifest-name", required=False,
+              help="Manifest name for --database conversion")
 @click.option("--from-format", "from_fmt", required=True,
               type=click.Choice(["AB", "TOP", "FORWARD", "DESIGN", "PLUS"],
                                 case_sensitive=False),
@@ -515,11 +540,19 @@ def convert_plink_cmd(bfile, bfile_dir, pattern, lookup, from_fmt, to_fmt,
               help="Also replace .pvar chromosome/base-pair columns with lookup positions")
 @click.option("--require-all-markers/--allow-missing-markers", default=True, show_default=True,
               help="Fail if any .pvar marker is absent from the lookup table")
-def convert_pfile_cmd(pfile, pfile_dir, pattern, lookup, from_fmt, to_fmt,
-                      output_prefix, outdir, suffix, overwrite, update_position,
+def convert_pfile_cmd(pfile, pfile_dir, pattern, lookup, database, species,
+                      assembly, manifest_name, from_fmt, to_fmt, output_prefix,
+                      outdir, suffix, overwrite, update_position,
                       require_all_markers):
     """Convert allele labels in a PLINK 2 pgen/pvar/psam fileset."""
-    table = load_lookup_table(lookup)
+    table = _load_conversion_table(
+        lookup=lookup,
+        database=database,
+        species=species,
+        assembly=assembly,
+        manifest_name=manifest_name,
+        context="PLINK 2",
+    )
     _require_one_input(pfile, pfile_dir, "--pfile", "--pfile-dir")
 
     if pfile:

@@ -3,8 +3,8 @@
 The SQLite database is optional. The normal lookup-file workflow remains
 supported and does not require a database.
 
-Current database support covers import, inspection, source-folder discovery, and
-CSV genotype conversion. PLINK conversion still uses lookup CSV files.
+Current database support covers import, inspection, source-folder discovery, CSV
+genotype conversion, PLINK 1 conversion, and PLINK 2 conversion.
 
 ## Install Notes
 
@@ -64,9 +64,10 @@ genotype-converter db marker \
 
 `db marker` supports `--format table`, `--format csv`, and `--format json`.
 
-## CSV Conversion
+## Conversion
 
-CSV genotype conversion can use a database instead of `--lookup`:
+Genotype conversion can use a database instead of `--lookup` when the command
+supports database mode:
 
 ```bash
 genotype-converter convert \
@@ -78,6 +79,18 @@ genotype-converter convert \
   --from-format TOP \
   --to-format PLUS \
   --output converted.csv
+```
+
+```bash
+genotype-converter convert-plink \
+  --bfile mydata_top \
+  --database genotype_converter.sqlite \
+  --species bos_taurus \
+  --assembly ARS_UCD_v2_0 \
+  --manifest-name bovinehd_manifest_b \
+  --from-format TOP \
+  --to-format PLUS \
+  --out mydata_plus
 ```
 
 For now, `--manifest-name` is required. This avoids guessing when the same

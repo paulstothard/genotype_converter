@@ -60,7 +60,7 @@ Options:
 | `--genotypes-dir` | unset | Directory of genotype CSV files. Use this instead of `--genotypes` for batch conversion. |
 | `--pattern` | `*.csv` | File pattern used with `--genotypes-dir`. |
 | `--lookup` | required unless `--database` is used | Lookup CSV from `build`. |
-| `--database` | unset | SQLite conversion database. CSV conversion only. |
+| `--database` | unset | SQLite conversion database. |
 | `--species` | required with `--database` | Species name for database-backed conversion. |
 | `--assembly` | required with `--database` | Reference assembly name for database-backed conversion. |
 | `--manifest-name` | required with `--database` | Manifest or panel name for database-backed conversion. |
@@ -235,7 +235,11 @@ Options:
 | `--bfile` | required for single-fileset mode | Input PLINK 1 binary prefix, without `.bed/.bim/.fam`. |
 | `--bfile-dir` | unset | Directory of PLINK 1 binary filesets. Use this instead of `--bfile` for batch conversion. |
 | `--pattern` | `*.bed` | File pattern used with `--bfile-dir`. The pattern should match `.bed` files. |
-| `--lookup` | required | Lookup CSV from `build`. |
+| `--lookup` | required unless `--database` is used | Lookup CSV from `build`. |
+| `--database` | unset | SQLite conversion database. |
+| `--species` | required with `--database` | Species name for database-backed conversion. |
+| `--assembly` | required with `--database` | Reference assembly name for database-backed conversion. |
+| `--manifest-name` | required with `--database` | Manifest or panel name for database-backed conversion. |
 | `--from-format` | required | Input `.bim` allele encoding: `AB`, `TOP`, `FORWARD`, `DESIGN`, or `PLUS`. |
 | `--to-format` | required | Output `.bim` allele encoding: `AB`, `TOP`, `FORWARD`, `DESIGN`, or `PLUS`. |
 | `--out` | required for single-fileset mode | Output PLINK 1 binary prefix. |
@@ -261,6 +265,20 @@ For an input fileset prefix `sample`, the default outputs are
 `sample.converted.bed`, `sample.converted.bim`, and `sample.converted.fam`.
 Existing batch outputs are protected unless `--overwrite` is supplied. Batch
 mode also writes `conversion_summary.csv` in the output directory.
+
+Database example:
+
+```bash
+genotype-converter convert-plink \
+  --bfile mydata_top \
+  --database genotype_converter.sqlite \
+  --species bos_taurus \
+  --assembly ARS_UCD_v2_0 \
+  --manifest-name bovinehd_manifest_b \
+  --from-format TOP \
+  --to-format PLUS \
+  --out mydata_plus
+```
 
 The PLINK batch summary includes:
 
@@ -336,7 +354,11 @@ Options:
 | `--pfile` | required for single-fileset mode | Input PLINK 2 prefix, without `.pgen/.pvar/.psam`. |
 | `--pfile-dir` | unset | Directory of PLINK 2 filesets. Use this instead of `--pfile` for batch conversion. |
 | `--pattern` | `*.pgen` | File pattern used with `--pfile-dir`. The pattern should match `.pgen` files. |
-| `--lookup` | required | Lookup CSV from `build`. |
+| `--lookup` | required unless `--database` is used | Lookup CSV from `build`. |
+| `--database` | unset | SQLite conversion database. |
+| `--species` | required with `--database` | Species name for database-backed conversion. |
+| `--assembly` | required with `--database` | Reference assembly name for database-backed conversion. |
+| `--manifest-name` | required with `--database` | Manifest or panel name for database-backed conversion. |
 | `--from-format` | required | Input `.pvar` allele encoding: `AB`, `TOP`, `FORWARD`, `DESIGN`, or `PLUS`. |
 | `--to-format` | required | Output `.pvar` allele encoding: `AB`, `TOP`, `FORWARD`, `DESIGN`, or `PLUS`. |
 | `--out` | required for single-fileset mode | Output PLINK 2 prefix. |
@@ -363,6 +385,20 @@ For an input fileset prefix `sample`, the default outputs are
 Existing batch outputs are protected unless `--overwrite` is supplied. Batch
 mode also writes `conversion_summary.csv` in the output directory using the
 PLINK batch summary columns described above.
+
+Database example:
+
+```bash
+genotype-converter convert-pfile \
+  --pfile mydata_top \
+  --database genotype_converter.sqlite \
+  --species bos_taurus \
+  --assembly ARS_UCD_v2_0 \
+  --manifest-name bovinehd_manifest_b \
+  --from-format TOP \
+  --to-format PLUS \
+  --out mydata_plus
+```
 
 `VCF` is not a `convert-pfile` target. The command rewrites allele labels in the
 existing `.pvar`; it does not transform PLINK genotype records into a VCF

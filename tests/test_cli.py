@@ -438,3 +438,219 @@ def test_convert_pfile_command_accepts_pfile_dir(pipeline_output, tmp_path):
     ]
     summary_rows = list(csv.DictReader((out_dir / "conversion_summary.csv").read_text().splitlines()))
     assert summary_rows[0]["alleles_changed"] == "2"
+
+
+def test_convert_plink_command_accepts_database_for_single_bfile(pipeline_output, tmp_path):
+    db_path = tmp_path / "conversion.sqlite"
+    lookup = pipeline_output / "manifest.reference.lookup.csv"
+    input_prefix = tmp_path / "plink" / "herd"
+    input_prefix.parent.mkdir()
+    output_prefix = tmp_path / "converted" / "herd_plus"
+    _write_plink_files(
+        input_prefix,
+        [["1", "SNP2", "0", "700", "A", "C"]],
+    )
+    runner = CliRunner()
+
+    import_result = runner.invoke(
+        main,
+        [
+            "db",
+            "import-lookup",
+            "--database",
+            str(db_path),
+            "--lookup",
+            str(lookup),
+            "--species",
+            "bos_taurus",
+            "--assembly",
+            "ARS_UCD_v2_0",
+            "--manifest-name",
+            "tiny_manifest",
+        ],
+    )
+    assert import_result.exit_code == 0, import_result.output
+
+    result = runner.invoke(
+        main,
+        [
+            "convert-plink",
+            "--bfile",
+            str(input_prefix),
+            "--database",
+            str(db_path),
+            "--species",
+            "bos_taurus",
+            "--assembly",
+            "ARS_UCD_v2_0",
+            "--manifest-name",
+            "tiny_manifest",
+            "--from-format",
+            "TOP",
+            "--to-format",
+            "PLUS",
+            "--out",
+            str(output_prefix),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert output_prefix.with_suffix(".bim").read_text().strip() == "1\tSNP2\t0\t700\tT\tG"
+
+
+def test_convert_plink_command_accepts_database_for_bfile_dir(pipeline_output, tmp_path):
+    db_path = tmp_path / "conversion.sqlite"
+    lookup = pipeline_output / "manifest.reference.lookup.csv"
+    input_dir = tmp_path / "plink"
+    input_dir.mkdir()
+    _write_plink_files(
+        input_dir / "herd",
+        [["1", "SNP2", "0", "700", "A", "C"]],
+    )
+    out_dir = tmp_path / "converted"
+    runner = CliRunner()
+
+    import_result = runner.invoke(
+        main,
+        [
+            "db",
+            "import-lookup",
+            "--database",
+            str(db_path),
+            "--lookup",
+            str(lookup),
+            "--species",
+            "bos_taurus",
+            "--assembly",
+            "ARS_UCD_v2_0",
+            "--manifest-name",
+            "tiny_manifest",
+        ],
+    )
+    assert import_result.exit_code == 0, import_result.output
+
+    result = runner.invoke(
+        main,
+        [
+            "convert-plink",
+            "--bfile-dir",
+            str(input_dir),
+            "--database",
+            str(db_path),
+            "--species",
+            "bos_taurus",
+            "--assembly",
+            "ARS_UCD_v2_0",
+            "--manifest-name",
+            "tiny_manifest",
+            "--from-format",
+            "TOP",
+            "--to-format",
+            "PLUS",
+            "--outdir",
+            str(out_dir),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert (out_dir / "herd.converted.bim").read_text().strip() == "1\tSNP2\t0\t700\tT\tG"
+    assert (out_dir / "conversion_summary.csv").is_file()
+
+
+def test_convert_pfile_command_accepts_database_for_single_pfile(pipeline_output, tmp_path):
+    db_path = tmp_path / "conversion.sqlite"
+    lookup = pipeline_output / "manifest.reference.lookup.csv"
+    input_prefix = tmp_path / "pfiles" / "herd"
+    input_prefix.parent.mkdir()
+    output_prefix = tmp_path / "converted" / "herd_plus"
+    _write_pfile(
+        input_prefix,
+        ["#CHROM\tPOS\tID\tREF\tALT", "1\t700\tSNP2\tA\tC"],
+    )
+    runner = CliRunner()
+
+    import_result = runner.invoke(
+        main,
+        [
+            "db",
+            "import-lookup",
+            "--database",
+            str(db_path),
+            "--lookup",
+            str(lookup),
+            "--species",
+            "bos_taurus",
+            "--assembly",
+            "ARS_UCD_v2_0",
+            "--manifest-name",
+            "tiny_manifest",
+        ],
+    )
+    assert import_result.exit_code == 0, import_result.output
+
+    result = runner.invoke(
+        main,
+        [
+            "convert-pfile",
+            "--pfile",
+            str(input_prefix),
+            "--database",
+            str(db_path),
+            "--species",
+            "bos_taurus",
+            "--assembly",
+            "ARS_UCD_v2_0",
+            "--manifest-name",
+            "tiny_manifest",
+            "--from-format",
+            "TOP",
+            "--to-format",
+            "PLUS",
+            "--out",
+            str(output_prefix),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert output_prefix.with_suffix(".pvar").read_text().splitlines() == [
+        "#CHROM\tPOS\tID\tREF\tALT",
+        "1\t700\tSNP2\tT\tG",
+    ]
+
+
+def test_convert_plink_database_requires_manifest_name(tmp_path):
+    db_path = tmp_path / "conversion.sqlite"
+    input_prefix = tmp_path / "plink" / "herd"
+    input_prefix.parent.mkdir()
+    output_prefix = tmp_path / "converted" / "herd_plus"
+    _write_plink_files(
+        input_prefix,
+        [["1", "SNP2", "0", "700", "A", "C"]],
+    )
+    runner = CliRunner()
+    init_result = runner.invoke(main, ["db", "init", "--database", str(db_path)])
+    assert init_result.exit_code == 0, init_result.output
+
+    result = runner.invoke(
+        main,
+        [
+            "convert-plink",
+            "--bfile",
+            str(input_prefix),
+            "--database",
+            str(db_path),
+            "--species",
+            "bos_taurus",
+            "--assembly",
+            "ARS_UCD_v2_0",
+            "--from-format",
+            "TOP",
+            "--to-format",
+            "PLUS",
+            "--out",
+            str(output_prefix),
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "--manifest-name" in result.output
