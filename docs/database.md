@@ -167,6 +167,30 @@ genotype-converter convert \
   --output converted.csv
 ```
 
+This default inference chooses one manifest for the whole input file or folder.
+For inputs that intentionally contain markers from more than one manifest, use
+mixed-manifest resolution:
+
+```bash
+genotype-converter convert \
+  --genotypes mydata.csv \
+  --database genotype_converter.sqlite \
+  --species bos_taurus \
+  --assembly ARS_UCD_v2_0 \
+  --resolve-mixed-manifests \
+  --from-format TOP \
+  --to-format PLUS \
+  --output converted.csv
+```
+
+Mixed-manifest mode resolves each marker independently. Markers with one
+candidate rule are used directly. Duplicate identical rules are accepted and
+reported. Conflicting duplicate marker rules are resolved only when nearby input
+markers clearly support one manifest over the other. If a conflict cannot be
+resolved, the default behavior is to fail. Use `--on-ambiguous-marker skip` to
+leave unresolved markers unchanged instead. A marker-resolution CSV is written
+automatically, or can be placed explicitly with `--resolution-report`.
+
 ## Source Folder Discovery
 
 Source folders can be inspected without running a build:

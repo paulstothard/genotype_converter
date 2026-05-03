@@ -21,6 +21,7 @@ from .database import (
     list_assemblies,
     list_manifests,
     list_species,
+    load_mixed_lookup_table_from_database,
     load_lookup_table_from_database,
     load_lookup_table_from_database_source,
     query_marker,
@@ -109,6 +110,49 @@ def _manifest_name_from_path(path: str) -> str:
     return Path(path).stem.replace(".", "_")
 
 
+def _write_marker_resolution_report(path: str, resolutions) -> None:
+    fieldnames = [
+        "marker_name",
+        "status",
+        "selected_manifest_name",
+        "selected_source_id",
+        "candidate_manifest_names",
+        "candidate_count",
+        "reason",
+    ]
+    report_path = Path(path)
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    with report_path.open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        for item in resolutions:
+            writer.writerow({field: getattr(item, field) for field in fieldnames})
+
+
+def _default_resolution_report_path(
+    output,
+    outdir,
+    output_prefix,
+    genotypes,
+    bfile,
+    pfile,
+    command: str,
+) -> str:
+    if output:
+        return str(Path(output).with_suffix(".manifest_resolution.csv"))
+    if output_prefix:
+        return f"{output_prefix}.manifest_resolution.csv"
+    if outdir:
+        return str(Path(outdir) / "manifest_resolution.csv")
+    if genotypes:
+        return str(Path(genotypes).with_suffix(".manifest_resolution.csv"))
+    if bfile:
+        return f"{bfile}.manifest_resolution.csv"
+    if pfile:
+        return f"{pfile}.manifest_resolution.csv"
+    return f"{command}.manifest_resolution.csv"
+
+
 def _load_conversion_table(
     lookup,
     database,
@@ -117,6 +161,9 @@ def _load_conversion_table(
     manifest_name,
     context: str,
     marker_names: list[str] | None = None,
+    resolve_mixed_manifests: bool = False,
+    on_ambiguous_marker: str = "fail",
+    resolution_report: str | None = None,
 ):
     _require_one_input(lookup, database, "--lookup", "--database")
     if lookup:
@@ -131,7 +178,35 @@ def _load_conversion_table(
         raise click.UsageError(
             f"{', '.join(missing)} required with --database for {context} conversion."
         )
+    if resolve_mixed_manifests and manifest_name:
+        raise click.UsageError(
+            "Use either --manifest-name or --resolve-mixed-manifests, not both."
+        )
     try:
+        if resolve_mixed_manifests:
+            if marker_names is None:
+                raise click.UsageError(
+                    f"Input marker names are required for mixed-manifest {context} conversion."
+                )
+            table, resolutions = load_mixed_lookup_table_from_database(
+                database_path=database,
+                species=species,
+                assembly=assembly,
+                marker_names=marker_names,
+                on_ambiguous=on_ambiguous_marker,
+            )
+            if resolution_report:
+                _write_marker_resolution_report(resolution_report, resolutions)
+                click.echo(f"Marker resolution report: {resolution_report}")
+            resolved = sum(1 for item in resolutions if item.status == "resolved")
+            ambiguous = sum(1 for item in resolutions if item.status == "ambiguous")
+            missing_count = sum(1 for item in resolutions if item.status == "missing")
+            click.echo(
+                "Resolved mixed manifests for "
+                f"{resolved}/{len(resolutions)} marker(s); "
+                f"{ambiguous} ambiguous, {missing_count} missing."
+            )
+            return table
         if not manifest_name:
             if marker_names is None:
                 raise click.UsageError(
@@ -562,6 +637,14 @@ def db_discover_sources_cmd(source_root, output_format):
               help="Reference assembly name for --database CSV conversion")
 @click.option("--manifest-name", required=False,
               help="Manifest name for --database CSV conversion; inferred from input markers if omitted")
+@click.option("--resolve-mixed-manifests/--no-resolve-mixed-manifests",
+              default=False, show_default=True,
+              help="Resolve database rules per marker for inputs containing markers from multiple manifests")
+@click.option("--on-ambiguous-marker", default="fail", show_default=True,
+              type=click.Choice(["fail", "skip"]),
+              help="How mixed-manifest mode handles conflicting rules that cannot be resolved")
+@click.option("--resolution-report", required=False,
+              help="CSV report path for mixed-manifest marker rule decisions")
 @click.option("--from-format", "from_fmt", required=True,
               type=click.Choice(["AB", "TOP", "FORWARD", "DESIGN", "PLUS", "VCF"],
                                 case_sensitive=False),
@@ -592,9 +675,10 @@ def db_discover_sources_cmd(source_root, output_format):
 @click.option("--genotype-col", default="genotype", show_default=True,
               help="Column name for genotype (long layout only)")
 def convert_cmd(genotypes, genotypes_dir, pattern, lookup, database, species,
-                assembly, manifest_name, from_fmt, to_fmt, output, outdir,
-                suffix, overwrite, layout, in_sep, out_sep, sample_col,
-                marker_col, genotype_col):
+                assembly, manifest_name, resolve_mixed_manifests,
+                on_ambiguous_marker, resolution_report, from_fmt, to_fmt,
+                output, outdir, suffix, overwrite, layout, in_sep, out_sep,
+                sample_col, marker_col, genotype_col):
     """Convert genotypes between format encodings (e.g. TOP → PLUS).
 
     Examples:
@@ -609,12 +693,22 @@ def convert_cmd(genotypes, genotypes_dir, pattern, lookup, database, species,
     to_fmt = to_fmt.upper()
     _require_one_input(genotypes, genotypes_dir, "--genotypes", "--genotypes-dir")
     marker_names = None
-    if database and not manifest_name:
+    if database and (not manifest_name or resolve_mixed_manifests):
         marker_names = _csv_marker_names(
             _csv_input_paths(genotypes, genotypes_dir, pattern),
             layout=layout,
             sample_col=sample_col,
             marker_col=marker_col,
+        )
+    if database and resolve_mixed_manifests and not resolution_report:
+        resolution_report = _default_resolution_report_path(
+            output=output,
+            outdir=outdir,
+            output_prefix=None,
+            genotypes=genotypes,
+            bfile=None,
+            pfile=None,
+            command="convert",
         )
     table = _load_conversion_table(
         lookup=lookup,
@@ -624,6 +718,9 @@ def convert_cmd(genotypes, genotypes_dir, pattern, lookup, database, species,
         manifest_name=manifest_name,
         context="CSV",
         marker_names=marker_names,
+        resolve_mixed_manifests=resolve_mixed_manifests,
+        on_ambiguous_marker=on_ambiguous_marker,
+        resolution_report=resolution_report,
     )
 
     if genotypes:
@@ -685,6 +782,14 @@ def convert_cmd(genotypes, genotypes_dir, pattern, lookup, database, species,
               help="Reference assembly name for --database conversion")
 @click.option("--manifest-name", required=False,
               help="Manifest name for --database conversion; inferred from input markers if omitted")
+@click.option("--resolve-mixed-manifests/--no-resolve-mixed-manifests",
+              default=False, show_default=True,
+              help="Resolve database rules per marker for inputs containing markers from multiple manifests")
+@click.option("--on-ambiguous-marker", default="fail", show_default=True,
+              type=click.Choice(["fail", "skip"]),
+              help="How mixed-manifest mode handles conflicting rules that cannot be resolved")
+@click.option("--resolution-report", required=False,
+              help="CSV report path for mixed-manifest marker rule decisions")
 @click.option("--from-format", "from_fmt", required=True,
               type=click.Choice(["AB", "TOP", "FORWARD", "DESIGN", "PLUS"],
                                 case_sensitive=False),
@@ -706,15 +811,26 @@ def convert_cmd(genotypes, genotypes_dir, pattern, lookup, database, species,
 @click.option("--require-all-markers/--allow-missing-markers", default=True, show_default=True,
               help="Fail if any .bim marker is absent from the lookup table")
 def convert_plink_cmd(bfile, bfile_dir, pattern, lookup, database, species,
-                      assembly, manifest_name, from_fmt, to_fmt, output_prefix,
-                      outdir, suffix, overwrite, update_position,
+                      assembly, manifest_name, resolve_mixed_manifests,
+                      on_ambiguous_marker, resolution_report, from_fmt, to_fmt,
+                      output_prefix, outdir, suffix, overwrite, update_position,
                       require_all_markers):
     """Convert allele labels in a PLINK bed/bim/fam fileset."""
     _require_one_input(bfile, bfile_dir, "--bfile", "--bfile-dir")
     marker_names = None
-    if database and not manifest_name:
+    if database and (not manifest_name or resolve_mixed_manifests):
         marker_names = _plink_bfile_marker_names(
             _plink_bfile_input_prefixes(bfile, bfile_dir, pattern)
+        )
+    if database and resolve_mixed_manifests and not resolution_report:
+        resolution_report = _default_resolution_report_path(
+            output=None,
+            outdir=outdir,
+            output_prefix=output_prefix,
+            genotypes=None,
+            bfile=bfile,
+            pfile=None,
+            command="convert-plink",
         )
     table = _load_conversion_table(
         lookup=lookup,
@@ -724,6 +840,9 @@ def convert_plink_cmd(bfile, bfile_dir, pattern, lookup, database, species,
         manifest_name=manifest_name,
         context="PLINK",
         marker_names=marker_names,
+        resolve_mixed_manifests=resolve_mixed_manifests,
+        on_ambiguous_marker=on_ambiguous_marker,
+        resolution_report=resolution_report,
     )
 
     if bfile:
@@ -776,6 +895,14 @@ def convert_plink_cmd(bfile, bfile_dir, pattern, lookup, database, species,
               help="Reference assembly name for --database conversion")
 @click.option("--manifest-name", required=False,
               help="Manifest name for --database conversion; inferred from input markers if omitted")
+@click.option("--resolve-mixed-manifests/--no-resolve-mixed-manifests",
+              default=False, show_default=True,
+              help="Resolve database rules per marker for inputs containing markers from multiple manifests")
+@click.option("--on-ambiguous-marker", default="fail", show_default=True,
+              type=click.Choice(["fail", "skip"]),
+              help="How mixed-manifest mode handles conflicting rules that cannot be resolved")
+@click.option("--resolution-report", required=False,
+              help="CSV report path for mixed-manifest marker rule decisions")
 @click.option("--from-format", "from_fmt", required=True,
               type=click.Choice(["AB", "TOP", "FORWARD", "DESIGN", "PLUS"],
                                 case_sensitive=False),
@@ -797,15 +924,26 @@ def convert_plink_cmd(bfile, bfile_dir, pattern, lookup, database, species,
 @click.option("--require-all-markers/--allow-missing-markers", default=True, show_default=True,
               help="Fail if any .pvar marker is absent from the lookup table")
 def convert_pfile_cmd(pfile, pfile_dir, pattern, lookup, database, species,
-                      assembly, manifest_name, from_fmt, to_fmt, output_prefix,
-                      outdir, suffix, overwrite, update_position,
+                      assembly, manifest_name, resolve_mixed_manifests,
+                      on_ambiguous_marker, resolution_report, from_fmt, to_fmt,
+                      output_prefix, outdir, suffix, overwrite, update_position,
                       require_all_markers):
     """Convert allele labels in a PLINK 2 pgen/pvar/psam fileset."""
     _require_one_input(pfile, pfile_dir, "--pfile", "--pfile-dir")
     marker_names = None
-    if database and not manifest_name:
+    if database and (not manifest_name or resolve_mixed_manifests):
         marker_names = _plink_pfile_marker_names(
             _plink_pfile_input_prefixes(pfile, pfile_dir, pattern)
+        )
+    if database and resolve_mixed_manifests and not resolution_report:
+        resolution_report = _default_resolution_report_path(
+            output=None,
+            outdir=outdir,
+            output_prefix=output_prefix,
+            genotypes=None,
+            bfile=None,
+            pfile=pfile,
+            command="convert-pfile",
         )
     table = _load_conversion_table(
         lookup=lookup,
@@ -815,6 +953,9 @@ def convert_pfile_cmd(pfile, pfile_dir, pattern, lookup, database, species,
         manifest_name=manifest_name,
         context="PLINK 2",
         marker_names=marker_names,
+        resolve_mixed_manifests=resolve_mixed_manifests,
+        on_ambiguous_marker=on_ambiguous_marker,
+        resolution_report=resolution_report,
     )
 
     if pfile:

@@ -104,7 +104,8 @@ Stage 2 has database conversion:
 
 Current inference uses all input marker IDs and chooses the imported manifest
 with the most matches. It fails on no-match and tied-best cases. More nuanced
-neighbor-window inference from input marker order remains planned.
+neighbor-window inference from input marker order is available through
+`--resolve-mixed-manifests`.
 
 ### Duplicate Marker Names
 
@@ -127,8 +128,8 @@ Marker names are unique only within one imported lookup source. Querying a
 marker without `--manifest-name` may return multiple rows, one per manifest.
 
 When a genotype file contains duplicate-rule markers and the user has not
-specified a manifest, the converter could infer the most likely manifest context
-from nearby markers in the input order. A practical heuristic:
+specified a manifest, mixed-manifest mode can infer the most likely manifest
+context from nearby markers in the input order. The implemented heuristic:
 
 1. For each ambiguous marker, look at a window of neighboring input markers.
 2. Count which manifest provides rules for the most neighboring markers.
@@ -136,8 +137,9 @@ from nearby markers in the input order. A practical heuristic:
 4. If no manifest is clearly ahead, report the marker as ambiguous and leave it
    unconverted or require an explicit user choice.
 
-This heuristic must be conservative and explainable. The converter should report
-which rule was selected and why, especially when multiple manifest rules exist.
+This heuristic is conservative and explainable. The converter reports which rule
+was selected and why in a marker-resolution CSV, especially when multiple
+manifest rules exist.
 
 ### Should Existing Outputs Stay?
 
@@ -250,7 +252,8 @@ Batch conversion does:
 Batch conversion still needs to:
 
 - report missing, ambiguous, and unconverted markers per file
-- support neighbor-window manifest inference for database mode
+- refine mixed-manifest reports so batch outputs can also include per-file
+  resolution summaries
 
 ### Database Test Fixture
 

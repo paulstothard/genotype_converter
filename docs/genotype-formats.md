@@ -64,6 +64,9 @@ Options:
 | `--species` | required with `--database` | Species name for database-backed conversion. |
 | `--assembly` | required with `--database` | Reference assembly name for database-backed conversion. |
 | `--manifest-name` | optional with `--database` | Manifest or panel name for database-backed conversion. If omitted, the command tries conservative marker-based inference. |
+| `--resolve-mixed-manifests` | off | Resolve database rules per marker for inputs containing markers from multiple manifests. |
+| `--on-ambiguous-marker` | `fail` | In mixed-manifest mode, either fail on unresolved conflicting rules or skip them unchanged. |
+| `--resolution-report` | auto | CSV report path for mixed-manifest marker rule decisions. |
 | `--from-format` | required | Input encoding: `AB`, `TOP`, `FORWARD`, `DESIGN`, `PLUS`, or `VCF`. |
 | `--to-format` | required | Output encoding. |
 | `--output` | required for single-file mode | Output file path. |
@@ -111,6 +114,12 @@ genotype-converter convert \
 If `--manifest-name` is omitted, the command chooses the imported lookup source
 that matches the most input markers for the requested species and assembly. It
 fails if no source matches or if the best match is tied.
+
+That default inference chooses one manifest for the whole input. Use
+`--resolve-mixed-manifests` for files that intentionally contain markers from
+more than one manifest. Mixed-manifest mode writes a marker-resolution report
+with the selected manifest, candidate count, and selection reason for each
+marker.
 
 The CSV batch summary includes:
 
@@ -246,6 +255,9 @@ Options:
 | `--species` | required with `--database` | Species name for database-backed conversion. |
 | `--assembly` | required with `--database` | Reference assembly name for database-backed conversion. |
 | `--manifest-name` | optional with `--database` | Manifest or panel name for database-backed conversion. If omitted, the command tries conservative marker-based inference. |
+| `--resolve-mixed-manifests` | off | Resolve database rules per marker for inputs containing markers from multiple manifests. |
+| `--on-ambiguous-marker` | `fail` | In mixed-manifest mode, either fail on unresolved conflicting rules or skip them unchanged. |
+| `--resolution-report` | auto | CSV report path for mixed-manifest marker rule decisions. |
 | `--from-format` | required | Input `.bim` allele encoding: `AB`, `TOP`, `FORWARD`, `DESIGN`, or `PLUS`. |
 | `--to-format` | required | Output `.bim` allele encoding: `AB`, `TOP`, `FORWARD`, `DESIGN`, or `PLUS`. |
 | `--out` | required for single-fileset mode | Output PLINK 1 binary prefix. |
@@ -365,6 +377,9 @@ Options:
 | `--species` | required with `--database` | Species name for database-backed conversion. |
 | `--assembly` | required with `--database` | Reference assembly name for database-backed conversion. |
 | `--manifest-name` | optional with `--database` | Manifest or panel name for database-backed conversion. If omitted, the command tries conservative marker-based inference. |
+| `--resolve-mixed-manifests` | off | Resolve database rules per marker for inputs containing markers from multiple manifests. |
+| `--on-ambiguous-marker` | `fail` | In mixed-manifest mode, either fail on unresolved conflicting rules or skip them unchanged. |
+| `--resolution-report` | auto | CSV report path for mixed-manifest marker rule decisions. |
 | `--from-format` | required | Input `.pvar` allele encoding: `AB`, `TOP`, `FORWARD`, `DESIGN`, or `PLUS`. |
 | `--to-format` | required | Output `.pvar` allele encoding: `AB`, `TOP`, `FORWARD`, `DESIGN`, or `PLUS`. |
 | `--out` | required for single-fileset mode | Output PLINK 2 prefix. |

@@ -12,9 +12,18 @@ from genotype_converter.cli import main
 def test_batch_options_are_shown_in_help():
     runner = CliRunner()
     expected_flags = {
-        "convert": ["--genotypes-dir", "--outdir", "--suffix", "--overwrite"],
-        "convert-plink": ["--bfile-dir", "--outdir", "--suffix", "--overwrite"],
-        "convert-pfile": ["--pfile-dir", "--outdir", "--suffix", "--overwrite"],
+        "convert": [
+            "--genotypes-dir", "--outdir", "--suffix", "--overwrite",
+            "--resolve-mixed-manifests", "--on-ambiguous-marker",
+        ],
+        "convert-plink": [
+            "--bfile-dir", "--outdir", "--suffix", "--overwrite",
+            "--resolve-mixed-manifests", "--on-ambiguous-marker",
+        ],
+        "convert-pfile": [
+            "--pfile-dir", "--outdir", "--suffix", "--overwrite",
+            "--resolve-mixed-manifests", "--on-ambiguous-marker",
+        ],
     }
 
     for command, flags in expected_flags.items():
@@ -54,7 +63,8 @@ def _write_pfile(prefix, pvar_lines):
     prefix.with_suffix(".pvar").write_text("".join(line + "\n" for line in pvar_lines))
 
 
-def _write_lookup_subset(source, dest, marker_names):
+def _write_lookup_subset(source, dest, marker_names, overrides=None):
+    overrides = overrides or {}
     with source.open(newline="") as handle:
         lines = [line for line in handle if not line.startswith("#")]
     reader = csv.DictReader(lines)
@@ -64,6 +74,7 @@ def _write_lookup_subset(source, dest, marker_names):
         writer.writeheader()
         for row in reader:
             if row["marker_name"] in marker_names:
+                row.update(overrides.get(row["marker_name"], {}))
                 writer.writerow(row)
 
 
@@ -334,6 +345,145 @@ def test_convert_database_infers_manifest_from_csv_markers(pipeline_output, tmp_
     assert "Inferred manifest 'large_panel'" in result.output
     rows = list(csv.DictReader(output_csv.read_text().splitlines()))
     assert rows[0]["SNP2"] == "T/G"
+
+
+def test_convert_database_resolves_mixed_manifests_per_marker(
+    pipeline_output, tmp_path
+):
+    db_path = tmp_path / "conversion.sqlite"
+    lookup = pipeline_output / "manifest.reference.lookup.csv"
+    panel_a = tmp_path / "panel_a.lookup.csv"
+    panel_b = tmp_path / "panel_b.lookup.csv"
+    report = tmp_path / "resolution.csv"
+    _write_lookup_subset(lookup, panel_a, {"SNP1", "SNP2", "SNP4"})
+    _write_lookup_subset(
+        lookup,
+        panel_b,
+        {"SNP2", "SNP3"},
+        overrides={"SNP2": {"A_in_PLUS": "C", "B_in_PLUS": "A"}},
+    )
+    input_csv = tmp_path / "genotypes.csv"
+    output_csv = tmp_path / "converted.csv"
+    input_csv.write_text("sample_id,SNP1,SNP2,SNP4\nS1,A/G,A/C,A/G\n")
+    runner = CliRunner()
+
+    for manifest_name, path in [("panel_a", panel_a), ("panel_b", panel_b)]:
+        import_result = runner.invoke(
+            main,
+            [
+                "db",
+                "import-lookup",
+                "--database",
+                str(db_path),
+                "--lookup",
+                str(path),
+                "--species",
+                "bos_taurus",
+                "--assembly",
+                "ARS_UCD_v2_0",
+                "--manifest-name",
+                manifest_name,
+            ],
+        )
+        assert import_result.exit_code == 0, import_result.output
+
+    result = runner.invoke(
+        main,
+        [
+            "convert",
+            "--genotypes",
+            str(input_csv),
+            "--database",
+            str(db_path),
+            "--species",
+            "bos_taurus",
+            "--assembly",
+            "ARS_UCD_v2_0",
+            "--resolve-mixed-manifests",
+            "--resolution-report",
+            str(report),
+            "--from-format",
+            "TOP",
+            "--to-format",
+            "PLUS",
+            "--output",
+            str(output_csv),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Resolved mixed manifests" in result.output
+    rows = list(csv.DictReader(output_csv.read_text().splitlines()))
+    assert rows[0]["SNP2"] == "T/G"
+    report_rows = list(csv.DictReader(report.read_text().splitlines()))
+    snp2 = next(row for row in report_rows if row["marker_name"] == "SNP2")
+    assert snp2["selected_manifest_name"] == "panel_a"
+    assert snp2["candidate_count"] == "2"
+
+
+def test_convert_database_mixed_manifest_mode_fails_on_ambiguous_marker(
+    pipeline_output, tmp_path
+):
+    db_path = tmp_path / "conversion.sqlite"
+    lookup = pipeline_output / "manifest.reference.lookup.csv"
+    panel_a = tmp_path / "panel_a.lookup.csv"
+    panel_b = tmp_path / "panel_b.lookup.csv"
+    _write_lookup_subset(lookup, panel_a, {"SNP1", "SNP2"})
+    _write_lookup_subset(
+        lookup,
+        panel_b,
+        {"SNP2", "SNP3"},
+        overrides={"SNP2": {"A_in_PLUS": "C", "B_in_PLUS": "A"}},
+    )
+    input_csv = tmp_path / "genotypes.csv"
+    output_csv = tmp_path / "converted.csv"
+    input_csv.write_text("sample_id,SNP1,SNP2,SNP3\nS1,A/G,A/C,A/C\n")
+    runner = CliRunner()
+
+    for manifest_name, path in [("panel_a", panel_a), ("panel_b", panel_b)]:
+        import_result = runner.invoke(
+            main,
+            [
+                "db",
+                "import-lookup",
+                "--database",
+                str(db_path),
+                "--lookup",
+                str(path),
+                "--species",
+                "bos_taurus",
+                "--assembly",
+                "ARS_UCD_v2_0",
+                "--manifest-name",
+                manifest_name,
+            ],
+        )
+        assert import_result.exit_code == 0, import_result.output
+
+    result = runner.invoke(
+        main,
+        [
+            "convert",
+            "--genotypes",
+            str(input_csv),
+            "--database",
+            str(db_path),
+            "--species",
+            "bos_taurus",
+            "--assembly",
+            "ARS_UCD_v2_0",
+            "--resolve-mixed-manifests",
+            "--from-format",
+            "TOP",
+            "--to-format",
+            "PLUS",
+            "--output",
+            str(output_csv),
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "Ambiguous marker rule" in result.output
 
 
 def test_convert_rejects_lookup_and_database_together(pipeline_output, tmp_path):

@@ -360,6 +360,12 @@ for the requested species and assembly. It fails instead of guessing if no
 source matches or if two sources tie. Use `--manifest-name` when you know the
 panel or when inference reports ambiguity.
 
+For genotype files that intentionally combine markers from multiple manifests,
+use `--resolve-mixed-manifests`. That mode resolves rules per marker and writes
+a marker-resolution report. Conflicting duplicate marker rules fail by default
+unless local marker context identifies one manifest clearly; use
+`--on-ambiguous-marker skip` to leave unresolved markers unchanged.
+
 To inspect a proposed source folder without running a build:
 
 ```bash

@@ -64,6 +64,17 @@ class InferredLookupSource:
     source_markers_total: int
 
 
+@dataclass(frozen=True)
+class MarkerResolution:
+    marker_name: str
+    status: str
+    selected_manifest_name: str
+    selected_source_id: int | None
+    candidate_manifest_names: str
+    candidate_count: int
+    reason: str
+
+
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -408,6 +419,168 @@ def load_lookup_table_from_database_source(
         }
         table[marker] = [row_a, row_b]
     return table
+
+
+def _rule_pair_from_row(row_dict: dict[str, Any]) -> list[dict[str, str]]:
+    row_a = {
+        "AB": row_dict.get("A_in_AB") or "A",
+        "TOP": row_dict.get("A_in_TOP") or "",
+        "FORWARD": row_dict.get("A_in_FORWARD") or "",
+        "DESIGN": row_dict.get("A_in_DESIGN") or "",
+        "PLUS": row_dict.get("A_in_PLUS") or "",
+        "VCF": row_dict.get("A_vcf") or "",
+        "chromosome": row_dict.get("chromosome") or "",
+        "position": str(row_dict.get("position") or ""),
+    }
+    row_b = {
+        "AB": row_dict.get("B_in_AB") or "B",
+        "TOP": row_dict.get("B_in_TOP") or "",
+        "FORWARD": row_dict.get("B_in_FORWARD") or "",
+        "DESIGN": row_dict.get("B_in_DESIGN") or "",
+        "PLUS": row_dict.get("B_in_PLUS") or "",
+        "VCF": row_dict.get("B_vcf") or "",
+        "chromosome": row_dict.get("chromosome") or "",
+        "position": str(row_dict.get("position") or ""),
+    }
+    return [row_a, row_b]
+
+
+def _rule_signature(row_dict: dict[str, Any]) -> tuple[str, ...]:
+    return tuple(str(row_dict.get(column) or "") for column in LOOKUP_COLUMNS[3:])
+
+
+def load_mixed_lookup_table_from_database(
+    database_path: str,
+    species: str,
+    assembly: str,
+    marker_names: list[str],
+    *,
+    window_size: int = 10,
+    on_ambiguous: str = "fail",
+) -> tuple[dict[str, list[dict[str, str]]], list[MarkerResolution]]:
+    ordered_markers = [marker for marker in marker_names if marker]
+    unique_markers = list(dict.fromkeys(ordered_markers))
+    if not unique_markers:
+        raise ValueError("Cannot resolve mixed manifests because no marker names were found.")
+    if on_ambiguous not in {"fail", "skip"}:
+        raise ValueError("on_ambiguous must be 'fail' or 'skip'")
+
+    placeholders = ",".join("?" for _ in unique_markers)
+    with connect(database_path) as conn:
+        rows = conn.execute(
+            f"""
+            SELECT
+                s.id AS source_id,
+                s.manifest_name,
+                r.*
+            FROM marker_rules r
+            JOIN lookup_sources s ON s.id = r.source_id
+            WHERE s.species = ?
+              AND s.assembly = ?
+              AND r.marker_name IN ({placeholders})
+            ORDER BY r.marker_name, s.manifest_name, s.id
+            """,
+            (species, assembly, *unique_markers),
+        ).fetchall()
+
+    by_marker: dict[str, list[dict[str, Any]]] = {}
+    markers_by_source: dict[int, set[str]] = {}
+    for row in rows:
+        row_dict = dict(row)
+        marker = row_dict["marker_name"]
+        by_marker.setdefault(marker, []).append(row_dict)
+        markers_by_source.setdefault(int(row_dict["source_id"]), set()).add(marker)
+
+    first_index: dict[str, int] = {}
+    for index, marker in enumerate(ordered_markers):
+        first_index.setdefault(marker, index)
+
+    table: dict[str, list[dict[str, str]]] = {}
+    resolutions: list[MarkerResolution] = []
+    ambiguous: list[str] = []
+    for marker in unique_markers:
+        candidates = by_marker.get(marker, [])
+        candidate_names = ";".join(row["manifest_name"] for row in candidates)
+        if not candidates:
+            resolutions.append(
+                MarkerResolution(
+                    marker_name=marker,
+                    status="missing",
+                    selected_manifest_name="",
+                    selected_source_id=None,
+                    candidate_manifest_names="",
+                    candidate_count=0,
+                    reason="no_source_contains_marker",
+                )
+            )
+            table[marker] = []
+            continue
+
+        selected: dict[str, Any] | None = None
+        reason = ""
+        status = "resolved"
+        signatures = {_rule_signature(row) for row in candidates}
+        if len(candidates) == 1:
+            selected = candidates[0]
+            reason = "single_candidate"
+        elif len(signatures) == 1:
+            selected = candidates[0]
+            reason = "duplicate_identical_rules"
+        else:
+            center = first_index[marker]
+            start = max(0, center - window_size)
+            end = min(len(ordered_markers), center + window_size + 1)
+            window_markers = set(ordered_markers[start:end])
+            scores = {
+                int(row["source_id"]): len(markers_by_source[int(row["source_id"])] & window_markers)
+                for row in candidates
+            }
+            best_score = max(scores.values())
+            best_ids = [source_id for source_id, score in scores.items() if score == best_score]
+            if len(best_ids) == 1:
+                selected = next(row for row in candidates if int(row["source_id"]) == best_ids[0])
+                reason = f"best_local_window_match:{best_score}/{len(window_markers)}"
+            else:
+                status = "ambiguous"
+                reason = "tied_local_window_match"
+
+        if selected is None:
+            ambiguous.append(marker)
+            resolutions.append(
+                MarkerResolution(
+                    marker_name=marker,
+                    status=status,
+                    selected_manifest_name="",
+                    selected_source_id=None,
+                    candidate_manifest_names=candidate_names,
+                    candidate_count=len(candidates),
+                    reason=reason,
+                )
+            )
+            table[marker] = []
+            continue
+
+        table[marker] = _rule_pair_from_row(selected)
+        resolutions.append(
+            MarkerResolution(
+                marker_name=marker,
+                status=status,
+                selected_manifest_name=str(selected["manifest_name"]),
+                selected_source_id=int(selected["source_id"]),
+                candidate_manifest_names=candidate_names,
+                candidate_count=len(candidates),
+                reason=reason,
+            )
+        )
+
+    if ambiguous and on_ambiguous == "fail":
+        preview = ", ".join(ambiguous[:10])
+        more = f" and {len(ambiguous) - 10} more" if len(ambiguous) > 10 else ""
+        raise ValueError(
+            "Ambiguous marker rule(s) could not be resolved: "
+            f"{preview}{more}. Use --on-ambiguous-marker skip to leave them unchanged."
+        )
+    return table, resolutions
 
 
 def infer_lookup_source_for_markers(

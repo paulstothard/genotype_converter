@@ -203,11 +203,15 @@ def convert_plink_bfile(
 
             chrom, marker, cm, pos, allele1, allele2 = fields
             variants_total += 1
-            rows = table.get(marker)
-            if not rows:
+            if marker not in table:
                 variants_missing_lookup += 1
                 missing_markers.append(marker)
                 out_handle.write("\t".join(fields) + "\n")
+                continue
+            rows = table.get(marker) or []
+            if not rows:
+                out_handle.write("\t".join(fields) + "\n")
+                variants_converted += 1
                 continue
 
             allele1_out = _convert_allele(allele1, marker, from_fmt, to_fmt, table)
@@ -375,11 +379,15 @@ def convert_plink_pfile(
                     "PLINK 2 conversion currently supports biallelic records only"
                 )
 
-            rows = table.get(marker)
-            if not rows:
+            if marker not in table:
                 variants_missing_lookup += 1
                 missing_markers.append(marker)
                 out_handle.write("\t".join(fields) + "\n")
+                continue
+            rows = table.get(marker) or []
+            if not rows:
+                out_handle.write("\t".join(fields) + "\n")
+                variants_converted += 1
                 continue
 
             ref = fields[indexes["REF"]]
