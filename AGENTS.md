@@ -11,6 +11,7 @@
   hand. The main scripts are:
   - `validation/run_bovine_hd_build.sh`
   - `validation/run_bovine_hd_compare.sh`
+  - `validation/mixed_manifest/run_make_example_genotypes.sh`
   - `validation/mixed_manifest/run_discover_sources.sh`
   - `validation/mixed_manifest/run_database_build.sh`
 - Do not run `validation/run_bovine_hd_build.sh` or

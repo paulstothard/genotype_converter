@@ -76,6 +76,36 @@ mixing them in one folder.
 If a reference is supplied as multiple FASTA files, make a single combined FASTA
 for this validation workspace before building the database.
 
+## Generate Small Genotype Examples
+
+The helper script scans the local manifest folders and writes small AB-coded
+genotype examples for each species:
+
+```bash
+validation/mixed_manifest/run_make_example_genotypes.sh
+```
+
+It writes files under:
+
+```text
+sources/<species>/genotypes/synthetic_mixed_manifest/
+  marker_selection.csv
+  mixed_manifest_wide_ab.csv
+  mixed_manifest_long_ab.csv
+  mixed_manifest_plink1_ab.bed
+  mixed_manifest_plink1_ab.bim
+  mixed_manifest_plink1_ab.fam
+  mixed_manifest_plink2_ab.pgen
+  mixed_manifest_plink2_ab.pvar
+  mixed_manifest_plink2_ab.psam
+```
+
+`marker_selection.csv` records why each marker was selected, including whether
+it is unique to one manifest or shared across manifests. The PLINK examples are
+for this converter's metadata rewrite tests: `.bim` and `.pvar` contain real
+selected marker IDs, while `.bed` and `.pgen` are small placeholder genotype
+matrices because the converter copies those files unchanged.
+
 ## Download Reference Genomes
 
 The helper script downloads NCBI RefSeq genome FASTA files and filters them to
