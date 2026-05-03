@@ -212,6 +212,13 @@ cross-species dispatch.
 Use `--on-ambiguous-marker fail` when you want the command to stop on unresolved
 conflicting marker rules.
 
+Some real source lookups contain the same marker ID more than once within one
+manifest-derived source. Identical duplicate rows are collapsed on import.
+Conflicting duplicates in the same source are skipped and reported because the
+converter cannot safely select one rule by marker name alone. Duplicate marker
+names across different manifests are still retained and handled by explicit
+`--manifest-name` or `--resolve-mixed-manifests`.
+
 ## Convert PLINK Files
 
 For PLINK 1 binary filesets:

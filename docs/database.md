@@ -191,6 +191,11 @@ resolved, the default behavior is to fail. Use `--on-ambiguous-marker skip` to
 leave unresolved markers unchanged instead. A marker-resolution CSV is written
 automatically, or can be placed explicitly with `--resolution-report`.
 
+During import, duplicate marker names within the same lookup source are handled
+more strictly because there is no manifest-level context to choose from.
+Identical duplicate rows are collapsed to one marker rule. Conflicting duplicate
+rows from the same source are skipped and reported by the import command.
+
 A tiny runnable example is provided in `examples/mixed_manifests/`.
 
 ## Source Folder Discovery

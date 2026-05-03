@@ -42,6 +42,8 @@ class LookupImportStats:
     source_id: int
     rows_imported: int
     rows_replaced: int
+    rows_skipped_duplicate_marker: int = 0
+    duplicate_marker_names: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -178,6 +180,35 @@ def _lookup_rows(lookup_path: str) -> list[dict[str, str]]:
     return [dict(row) for row in reader if row.get("marker_name")]
 
 
+def _deduplicate_lookup_rows(
+    rows: list[dict[str, str]],
+) -> tuple[list[dict[str, str]], int, tuple[str, ...]]:
+    by_marker: dict[str, list[dict[str, str]]] = {}
+    for row in rows:
+        by_marker.setdefault(row["marker_name"], []).append(row)
+
+    deduplicated: list[dict[str, str]] = []
+    skipped = 0
+    conflicting_markers: list[str] = []
+    for marker_name, marker_rows in by_marker.items():
+        if len(marker_rows) == 1:
+            deduplicated.append(marker_rows[0])
+            continue
+
+        signatures = {
+            tuple(str(row.get(column) or "") for column in LOOKUP_COLUMNS[1:])
+            for row in marker_rows
+        }
+        if len(signatures) == 1:
+            deduplicated.append(marker_rows[0])
+            continue
+
+        skipped += len(marker_rows)
+        conflicting_markers.append(marker_name)
+
+    return deduplicated, skipped, tuple(sorted(conflicting_markers))
+
+
 def import_lookup(
     database_path: str,
     lookup_path: str,
@@ -194,6 +225,9 @@ def import_lookup(
 ) -> LookupImportStats:
     init_database(database_path)
     rows = _lookup_rows(lookup_path)
+    rows, rows_skipped_duplicate_marker, duplicate_marker_names = (
+        _deduplicate_lookup_rows(rows)
+    )
     lookup_sha = sha256_file(lookup_path)
     manifest_sha = sha256_file(manifest_path) if manifest_path else None
     reference_sha = sha256_file(reference_path) if reference_path else None
@@ -285,6 +319,8 @@ def import_lookup(
         source_id=source_id,
         rows_imported=len(rows),
         rows_replaced=rows_replaced,
+        rows_skipped_duplicate_marker=rows_skipped_duplicate_marker,
+        duplicate_marker_names=duplicate_marker_names,
     )
 
 

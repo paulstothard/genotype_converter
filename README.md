@@ -370,6 +370,11 @@ unless local marker context identifies one manifest clearly; use
 `--on-ambiguous-marker skip` to leave unresolved markers unchanged.
 See `examples/mixed_manifests/` for a small runnable mixed-manifest example.
 
+If a single imported lookup source contains the same marker ID more than once,
+identical duplicate rows are collapsed. Conflicting duplicates from the same
+source are skipped during import because marker-name conversion cannot choose
+between them safely; the import command reports the skipped marker IDs.
+
 To inspect a proposed source folder without running a build:
 
 ```bash

@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from genotype_converter.database import (
+    LOOKUP_COLUMNS,
     discover_source_folders,
     infer_lookup_source_for_markers,
     import_lookup,
@@ -30,6 +31,16 @@ def _write_lookup_subset(source: Path, dest: Path, marker_names: set[str]) -> No
         for row in reader:
             if row["marker_name"] in marker_names:
                 writer.writerow(row)
+
+
+def _write_lookup_rows(dest: Path, rows: list[dict[str, str]]) -> None:
+    with dest.open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=LOOKUP_COLUMNS)
+        writer.writeheader()
+        for row in rows:
+            complete_row = {column: "" for column in LOOKUP_COLUMNS}
+            complete_row.update(row)
+            writer.writerow(complete_row)
 
 
 def test_import_lookup_tracks_context_and_queries_markers(pipeline_output, tmp_path):
@@ -259,6 +270,93 @@ def test_import_lookup_requires_replace_for_same_source(pipeline_output, tmp_pat
         rule_count = conn.execute("SELECT COUNT(*) FROM marker_rules").fetchone()[0]
     assert source_count == 1
     assert rule_count == 8
+
+
+def test_import_lookup_collapses_identical_duplicate_marker_rows(tmp_path):
+    db_path = tmp_path / "conversion.sqlite"
+    lookup = tmp_path / "duplicate_identical.lookup.csv"
+    row = {
+        "marker_name": "DUP1",
+        "chromosome": "1",
+        "position": "10",
+        "A_in_TOP": "A",
+        "B_in_TOP": "C",
+    }
+    _write_lookup_rows(lookup, [row, dict(row)])
+
+    stats = import_lookup(
+        database_path=str(db_path),
+        lookup_path=str(lookup),
+        species="bos_taurus",
+        assembly="ARS_UCD_v2_0",
+        manifest_name="duplicate_panel",
+    )
+
+    assert stats.rows_imported == 1
+    assert stats.rows_skipped_duplicate_marker == 0
+    assert stats.duplicate_marker_names == ()
+    rows = query_marker(
+        database_path=str(db_path),
+        species="bos_taurus",
+        assembly="ARS_UCD_v2_0",
+        marker_name="DUP1",
+    )
+    assert len(rows) == 1
+
+
+def test_import_lookup_skips_conflicting_duplicate_marker_rows(tmp_path):
+    db_path = tmp_path / "conversion.sqlite"
+    lookup = tmp_path / "duplicate_conflict.lookup.csv"
+    _write_lookup_rows(
+        lookup,
+        [
+            {
+                "marker_name": "DUP1",
+                "chromosome": "1",
+                "position": "10",
+                "A_in_TOP": "A",
+                "B_in_TOP": "C",
+            },
+            {
+                "marker_name": "DUP1",
+                "chromosome": "1",
+                "position": "20",
+                "A_in_TOP": "G",
+                "B_in_TOP": "T",
+            },
+            {
+                "marker_name": "UNIQUE1",
+                "chromosome": "2",
+                "position": "30",
+                "A_in_TOP": "A",
+                "B_in_TOP": "G",
+            },
+        ],
+    )
+
+    stats = import_lookup(
+        database_path=str(db_path),
+        lookup_path=str(lookup),
+        species="bos_taurus",
+        assembly="ARS_UCD_v2_0",
+        manifest_name="duplicate_panel",
+    )
+
+    assert stats.rows_imported == 1
+    assert stats.rows_skipped_duplicate_marker == 2
+    assert stats.duplicate_marker_names == ("DUP1",)
+    assert query_marker(
+        database_path=str(db_path),
+        species="bos_taurus",
+        assembly="ARS_UCD_v2_0",
+        marker_name="DUP1",
+    ) == []
+    assert len(query_marker(
+        database_path=str(db_path),
+        species="bos_taurus",
+        assembly="ARS_UCD_v2_0",
+        marker_name="UNIQUE1",
+    )) == 1
 
 
 def test_database_source_fixture_contains_expected_layout():

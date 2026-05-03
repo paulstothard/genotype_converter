@@ -514,6 +514,18 @@ def db_import_lookup_cmd(database, lookup, species, assembly, manifest_name,
         f"Imported {stats.rows_imported} marker rules from {lookup} "
         f"as source {stats.source_id}."
     )
+    if stats.rows_skipped_duplicate_marker:
+        preview = ", ".join(stats.duplicate_marker_names[:10])
+        more = (
+            f" and {len(stats.duplicate_marker_names) - 10} more"
+            if len(stats.duplicate_marker_names) > 10
+            else ""
+        )
+        click.echo(
+            "Skipped "
+            f"{stats.rows_skipped_duplicate_marker} row(s) with conflicting "
+            f"duplicate marker name(s): {preview}{more}."
+        )
     if stats.rows_replaced:
         click.echo("Replaced existing source with the same lookup checksum.")
 
@@ -589,6 +601,18 @@ def db_build_cmd(source_root, database, build_outdir, workers, replace, progress
             click.echo(
                 f"Imported {import_stats.rows_imported} marker rules from {lookup_path}"
             )
+            if import_stats.rows_skipped_duplicate_marker:
+                preview = ", ".join(import_stats.duplicate_marker_names[:10])
+                more = (
+                    f" and {len(import_stats.duplicate_marker_names) - 10} more"
+                    if len(import_stats.duplicate_marker_names) > 10
+                    else ""
+                )
+                click.echo(
+                    "Skipped "
+                    f"{import_stats.rows_skipped_duplicate_marker} row(s) with "
+                    f"conflicting duplicate marker name(s): {preview}{more}"
+                )
 
     click.echo(
         f"Database build complete: {total_imported} lookup source(s), "

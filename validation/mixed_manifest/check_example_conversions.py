@@ -37,6 +37,25 @@ def count_csv_records(path: Path) -> int:
         return sum(1 for _row in csv.DictReader(handle))
 
 
+def count_csv_wide_markers(path: Path) -> int:
+    with path.open(newline="") as handle:
+        reader = csv.DictReader(handle)
+        if reader.fieldnames is None:
+            return 0
+        return max(len(reader.fieldnames) - 1, 0)
+
+
+def count_csv_long_markers(path: Path) -> int:
+    with path.open(newline="") as handle:
+        return len(
+            {
+                row.get("marker_name", "")
+                for row in csv.DictReader(handle)
+                if row.get("marker_name")
+            }
+        )
+
+
 def count_gsgt_matrix_rows(path: Path) -> int:
     lines = data_lines(path)
     data_index = lines.index("[Data]")
@@ -47,6 +66,19 @@ def count_gsgt_long_rows(path: Path) -> int:
     lines = data_lines(path)
     data_index = lines.index("[Data]")
     return max(len(lines[data_index + 2 :]), 0)
+
+
+def count_gsgt_long_markers(path: Path) -> int:
+    lines = data_lines(path)
+    data_index = lines.index("[Data]")
+    reader = csv.DictReader(lines[data_index + 1 :], delimiter="\t")
+    return len(
+        {
+            row.get("SNP Name", "")
+            for row in reader
+            if row.get("SNP Name")
+        }
+    )
 
 
 def count_tabular_body_rows(path: Path) -> int:
@@ -86,21 +118,31 @@ def check_one(
     input_path: Path,
     output_path: Path,
     report_path: Path,
-    counter,
+    record_counter,
+    marker_counter,
 ) -> CheckResult:
     if not input_path.exists():
         return CheckResult(species, assembly, format_name, "missing-input", 0, 0, 0, 0, str(input_path))
     if not output_path.exists():
-        return CheckResult(species, assembly, format_name, "missing-output", counter(input_path), 0, 0, 0, str(output_path))
-    input_records = counter(input_path)
-    output_records = counter(output_path)
+        return CheckResult(species, assembly, format_name, "missing-output", record_counter(input_path), 0, 0, 0, str(output_path))
+    input_records = record_counter(input_path)
+    output_records = record_counter(output_path)
+    expected_resolution_rows = marker_counter(input_path)
     resolution_rows, flagged = resolution_counts(report_path)
-    status = "pass" if input_records == output_records and resolution_rows >= input_records else "warn"
+    status = (
+        "pass"
+        if input_records == output_records
+        and resolution_rows >= expected_resolution_rows
+        and flagged == 0
+        else "warn"
+    )
     message = ""
     if input_records != output_records:
         message = "input/output record counts differ"
-    elif resolution_rows < input_records:
-        message = "resolution report has fewer rows than input records"
+    elif resolution_rows < expected_resolution_rows:
+        message = "resolution report has fewer rows than distinct markers"
+    elif flagged:
+        message = "resolution report contains missing or ambiguous markers"
     return CheckResult(
         species,
         assembly,
@@ -138,6 +180,7 @@ def collect_results() -> list[CheckResult]:
                 out_dir / "mixed_manifest_wide_plus.csv",
                 report_dir / "mixed_manifest_wide_resolution.csv",
                 count_csv_records,
+                count_csv_wide_markers,
             ),
             (
                 "csv-long",
@@ -145,12 +188,14 @@ def collect_results() -> list[CheckResult]:
                 out_dir / "mixed_manifest_long_plus.csv",
                 report_dir / "mixed_manifest_long_resolution.csv",
                 count_csv_records,
+                count_csv_long_markers,
             ),
             (
                 "illumina-matrix",
                 genotype_dir / "illumina_gsgt_matrix_ab.txt",
                 out_dir / "illumina_gsgt_matrix_plus.txt",
                 report_dir / "illumina_gsgt_matrix_resolution.csv",
+                count_gsgt_matrix_rows,
                 count_gsgt_matrix_rows,
             ),
             (
@@ -159,12 +204,14 @@ def collect_results() -> list[CheckResult]:
                 out_dir / "illumina_gsgt_long_plus.txt",
                 report_dir / "illumina_gsgt_long_resolution.csv",
                 count_gsgt_long_rows,
+                count_gsgt_long_markers,
             ),
             (
                 "affymetrix-matrix",
                 genotype_dir / "affymetrix_axiom_dual_call_matrix.txt",
                 out_dir / "affymetrix_axiom_dual_call_matrix_plus.txt",
                 report_dir / "affymetrix_axiom_dual_call_matrix_resolution.csv",
+                count_tabular_body_rows,
                 count_tabular_body_rows,
             ),
             (
@@ -173,12 +220,14 @@ def collect_results() -> list[CheckResult]:
                 out_dir / "mixed_manifest_plink1_plus.bim",
                 report_dir / "mixed_manifest_plink1_resolution.csv",
                 count_plink_bim,
+                count_plink_bim,
             ),
             (
                 "plink2",
                 genotype_dir / "mixed_manifest_plink2_ab.pvar",
                 out_dir / "mixed_manifest_plink2_plus.pvar",
                 report_dir / "mixed_manifest_plink2_resolution.csv",
+                count_pvar,
                 count_pvar,
             ),
         ]
