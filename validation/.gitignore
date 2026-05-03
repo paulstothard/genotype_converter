@@ -20,6 +20,7 @@ mixed_manifest/*.sqlite
 mixed_manifest/*.sqlite3
 mixed_manifest/*.sqlite-journal
 mixed_manifest/*.sqlite3-journal
+mixed_manifest/temp-dont-commit/
 
 # Allow directory placeholders.
 !data/.gitkeep

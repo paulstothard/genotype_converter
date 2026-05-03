@@ -138,6 +138,42 @@ def genotype_for(sample_index: int, marker_index: int) -> str:
     return patterns[(sample_index + marker_index) % len(patterns)]
 
 
+def compact_ab_genotype(sample_index: int, marker_index: int) -> str:
+    return genotype_for(sample_index, marker_index).replace("/", "")
+
+
+def native_genotype(record: ManifestRecord, compact_ab: str) -> str:
+    if compact_ab == "0":
+        return "---"
+    alleles = []
+    for allele in compact_ab:
+        if allele == "A":
+            alleles.append(record.ab_a)
+        elif allele == "B":
+            alleles.append(record.ab_b)
+        else:
+            alleles.append("-")
+    return "".join(alleles)
+
+
+def write_gsgt_header(
+    handle,
+    *,
+    content: str,
+    marker_count: int,
+    sample_count: int,
+) -> None:
+    handle.write("[Header]\n")
+    handle.write("GSGT Version\t2.0.4\n")
+    handle.write("Processing Date\tvalidation synthetic\n")
+    handle.write(f"Content\t\t{content}\n")
+    handle.write(f"Num SNPs\t{marker_count}\n")
+    handle.write(f"Total SNPs\t{marker_count}\n")
+    handle.write(f"Num Samples\t{sample_count}\n")
+    handle.write(f"Total Samples\t{sample_count}\n")
+    handle.write("[Data]\n")
+
+
 def write_wide(path: Path, markers: list[Occurrence]) -> None:
     samples = ["SAMPLE001", "SAMPLE002", "SAMPLE003"]
     with path.open("w", newline="") as handle:
@@ -167,6 +203,96 @@ def write_long(path: Path, markers: list[Occurrence]) -> None:
                         genotype_for(sample_index, marker_index),
                     ]
                 )
+
+
+def write_legacy_illumina_matrix(path: Path, markers: list[Occurrence]) -> None:
+    samples = ["SAMPLE001", "SAMPLE002", "SAMPLE003"]
+    with path.open("w") as handle:
+        write_gsgt_header(
+            handle,
+            content="synthetic_mixed_manifest.bpm",
+            marker_count=len(markers),
+            sample_count=len(samples),
+        )
+        handle.write("\t" + "\t".join(samples) + "\n")
+        for marker_index, marker in enumerate(markers):
+            values = [
+                compact_ab_genotype(sample_index, marker_index)
+                for sample_index, _sample in enumerate(samples)
+            ]
+            handle.write(marker.record.name + "\t" + "\t".join(values) + "\n")
+
+
+def write_legacy_illumina_long(path: Path, markers: list[Occurrence]) -> None:
+    samples = ["SAMPLE001", "SAMPLE002", "SAMPLE003"]
+    columns = [
+        "SNP Name",
+        "Sample ID",
+        "Allele1 - Top",
+        "Allele2 - Top",
+        "Allele1 - Forward",
+        "Allele2 - Forward",
+        "Allele1 - AB",
+        "Allele2 - AB",
+        "Allele1 - Design",
+        "Allele2 - Design",
+        "Allele1 - Plus",
+        "Allele2 - Plus",
+        "GC Score",
+    ]
+    with path.open("w") as handle:
+        write_gsgt_header(
+            handle,
+            content="synthetic_mixed_manifest.bpm",
+            marker_count=len(markers),
+            sample_count=len(samples),
+        )
+        handle.write("\t".join(columns) + "\n")
+        for sample_index, sample in enumerate(samples):
+            for marker_index, marker in enumerate(markers):
+                ab = compact_ab_genotype(sample_index, marker_index)
+                if ab == "0":
+                    allele1 = allele2 = "-"
+                    native1 = native2 = "-"
+                else:
+                    allele1, allele2 = list(ab)
+                    native = native_genotype(marker.record, ab)
+                    native1, native2 = list(native)
+                handle.write(
+                    "\t".join(
+                        [
+                            marker.record.name,
+                            sample,
+                            native1,
+                            native2,
+                            native1,
+                            native2,
+                            allele1,
+                            allele2,
+                            native1,
+                            native2,
+                            "-",
+                            "-",
+                            "0.99",
+                        ]
+                    )
+                    + "\n"
+                )
+
+
+def write_legacy_affy_dual_column(path: Path, markers: list[Occurrence]) -> None:
+    samples = ["SAMPLE001", "SAMPLE002", "SAMPLE003"]
+    with path.open("w") as handle:
+        header = ["probeset_id"]
+        for sample in samples:
+            header.extend([sample, sample])
+        handle.write("\t".join(header) + "\n")
+        for marker_index, marker in enumerate(markers):
+            values = [marker.record.name]
+            for sample_index, _sample in enumerate(samples):
+                ab = compact_ab_genotype(sample_index, marker_index)
+                values.extend([("NoCall" if ab == "0" else ab), native_genotype(marker.record, ab)])
+            handle.write("\t".join(values) + "\n")
 
 
 def write_plink1(prefix: Path, markers: list[Occurrence]) -> None:
@@ -258,6 +384,9 @@ def write_examples(species_dir: Path) -> None:
     write_selection_report(genotype_dir / "marker_selection.csv", selected, by_marker)
     write_wide(genotype_dir / "mixed_manifest_wide_ab.csv", selected)
     write_long(genotype_dir / "mixed_manifest_long_ab.csv", selected)
+    write_legacy_illumina_matrix(genotype_dir / "legacy_illumina_matrix_ab.txt", selected)
+    write_legacy_illumina_long(genotype_dir / "legacy_illumina_long_multiformat.txt", selected)
+    write_legacy_affy_dual_column(genotype_dir / "legacy_affy_dual_column.txt", selected)
     write_plink1(genotype_dir / "mixed_manifest_plink1_ab", selected)
     write_plink2(genotype_dir / "mixed_manifest_plink2_ab", selected)
     shared_count = sum(1 for marker in selected if len(by_marker[marker.record.name]) > 1)
