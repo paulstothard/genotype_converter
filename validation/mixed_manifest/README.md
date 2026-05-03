@@ -169,6 +169,25 @@ Change `--species` and `--assembly` to inspect another folder, such as
 
 ## Convert A Folder Of CSV Genotypes
 
+After the SQLite database has been built, run all generated example conversions:
+
+```bash
+validation/mixed_manifest/run_example_conversions.sh --overwrite
+
+validation/mixed_manifest/run_check_example_conversions.sh
+```
+
+The conversion script runs CSV wide, CSV long, Illumina/GSGT matrix,
+Illumina/GSGT long, Affymetrix/Axiom matrix, PLINK 1, and PLINK 2 examples for
+each species/reference assembly. The check script writes:
+
+```text
+reports/example_conversion_check.csv
+reports/example_conversion_check.md
+```
+
+For one manual CSV conversion:
+
 ```bash
 genotype-converter convert \
   --genotypes-dir validation/mixed_manifest/sources/bos_taurus/genotypes \

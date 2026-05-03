@@ -14,6 +14,8 @@
   - `validation/mixed_manifest/run_make_example_genotypes.sh`
   - `validation/mixed_manifest/run_discover_sources.sh`
   - `validation/mixed_manifest/run_database_build.sh`
+  - `validation/mixed_manifest/run_example_conversions.sh`
+  - `validation/mixed_manifest/run_check_example_conversions.sh`
 - Do not run `validation/run_bovine_hd_build.sh` or
   `validation/mixed_manifest/run_database_build.sh` unless the user explicitly
   asks for the large build. The mixed-manifest database build script also
