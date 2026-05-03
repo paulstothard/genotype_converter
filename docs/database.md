@@ -4,7 +4,8 @@ The SQLite database is optional. The normal lookup-file workflow remains
 supported and does not require a database.
 
 Current database support covers import, inspection, source-folder discovery, CSV
-genotype conversion, PLINK 1 conversion, and PLINK 2 conversion.
+genotype conversion, PLINK 1 conversion, PLINK 2 conversion, and batch
+conversion for those same genotype layouts.
 
 ## Install Notes
 
@@ -91,6 +92,60 @@ genotype-converter convert-plink \
   --from-format TOP \
   --to-format PLUS \
   --out mydata_plus
+```
+
+```bash
+genotype-converter convert-pfile \
+  --pfile mydata_top \
+  --database genotype_converter.sqlite \
+  --species bos_taurus \
+  --assembly ARS_UCD_v2_0 \
+  --manifest-name bovinehd_manifest_b \
+  --from-format TOP \
+  --to-format PLUS \
+  --out mydata_plus
+```
+
+Folder conversion uses the same database context:
+
+```bash
+genotype-converter convert \
+  --genotypes-dir genotype_files \
+  --pattern "*.csv" \
+  --database genotype_converter.sqlite \
+  --species bos_taurus \
+  --assembly ARS_UCD_v2_0 \
+  --manifest-name bovinehd_manifest_b \
+  --from-format TOP \
+  --to-format PLUS \
+  --layout wide \
+  --outdir converted_genotype_files
+```
+
+```bash
+genotype-converter convert-plink \
+  --bfile-dir plink_files \
+  --pattern "*.bed" \
+  --database genotype_converter.sqlite \
+  --species bos_taurus \
+  --assembly ARS_UCD_v2_0 \
+  --manifest-name bovinehd_manifest_b \
+  --from-format TOP \
+  --to-format PLUS \
+  --outdir converted_plink_files
+```
+
+```bash
+genotype-converter convert-pfile \
+  --pfile-dir pfiles \
+  --pattern "*.pgen" \
+  --database genotype_converter.sqlite \
+  --species bos_taurus \
+  --assembly ARS_UCD_v2_0 \
+  --manifest-name bovinehd_manifest_b \
+  --from-format TOP \
+  --to-format PLUS \
+  --outdir converted_pfiles
 ```
 
 For now, `--manifest-name` is required. This avoids guessing when the same

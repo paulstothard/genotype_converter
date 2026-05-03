@@ -92,9 +92,12 @@ Stage 1 is implemented for existing lookup files:
 
 Stage 2 has explicit-context database conversion:
 
-- `genotype-converter convert` can use `--database` instead of `--lookup`
+- `genotype-converter convert` can use `--database` instead of `--lookup` for
+  single CSV files and CSV folders
 - `genotype-converter convert-plink` can use `--database` instead of `--lookup`
+  for single PLINK 1 filesets and PLINK 1 folders
 - `genotype-converter convert-pfile` can use `--database` instead of `--lookup`
+  for single PLINK 2 filesets and PLINK 2 folders
 - `--species`, `--assembly`, and `--manifest-name` are required in database mode
 
 Manifest inference from neighboring markers is not implemented.
@@ -157,11 +160,11 @@ many species, assemblies, manifests, or genotype batches.
 
 ### Batch Conversion
 
-Lookup-file batch conversion is now supported for CSV wide, CSV long, PLINK 1
-binary filesets, and PLINK 2 filesets. Database-backed batch conversion remains
-planned.
+Batch conversion is now supported for CSV wide, CSV long, PLINK 1 binary
+filesets, and PLINK 2 filesets. Batch conversion can use either a lookup CSV or
+an explicit database context.
 
-Current lookup-file command shape:
+Lookup-file command shape:
 
 ```bash
 genotype-converter convert \
@@ -193,7 +196,7 @@ genotype-converter convert-pfile \
   --outdir converted/
 ```
 
-Database-backed batch conversion could use this shape:
+Database-backed command shape:
 
 ```bash
 genotype-converter convert \
@@ -202,6 +205,33 @@ genotype-converter convert \
   --database genotype_converter.sqlite \
   --species bos_taurus \
   --assembly ARS_UCD_v2_0 \
+  --manifest-name bovinehd_manifest_b \
+  --from-format TOP \
+  --to-format PLUS \
+  --outdir converted/
+```
+
+```bash
+genotype-converter convert-plink \
+  --bfile-dir plink_files/ \
+  --pattern "*.bed" \
+  --database genotype_converter.sqlite \
+  --species bos_taurus \
+  --assembly ARS_UCD_v2_0 \
+  --manifest-name bovinehd_manifest_b \
+  --from-format TOP \
+  --to-format PLUS \
+  --outdir converted/
+```
+
+```bash
+genotype-converter convert-pfile \
+  --pfile-dir pfiles/ \
+  --pattern "*.pgen" \
+  --database genotype_converter.sqlite \
+  --species bos_taurus \
+  --assembly ARS_UCD_v2_0 \
+  --manifest-name bovinehd_manifest_b \
   --from-format TOP \
   --to-format PLUS \
   --outdir converted/
@@ -216,7 +246,7 @@ Batch conversion does:
 Batch conversion still needs to:
 
 - report missing, ambiguous, and unconverted markers per file
-- support database mode
+- support automatic manifest inference for database mode
 
 ### Database Test Fixture
 

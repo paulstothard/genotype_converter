@@ -44,12 +44,13 @@ required (`xcode-select --install`); on Linux, `gcc` and `zlib-dev`/`zlib-devel`
 ### Option A — conda (recommended)
 
 ```bash
-conda create -n genotype-converter-env python=3.12
-conda activate genotype-converter-env
-
 git clone https://github.com/paulstothard/genotype_converter.git
 cd genotype_converter
-pip install -e .
+
+conda env create -f environment.yml
+conda activate genotype-converter-env
+
+genotype-converter --help
 ```
 
 ### Option B — pip + venv
@@ -336,6 +337,21 @@ genotype-converter convert-plink \
   --from-format TOP \
   --to-format PLUS \
   --out mydata_plus
+```
+
+The same database options work in batch mode. For example:
+
+```bash
+genotype-converter convert-pfile \
+  --pfile-dir pfiles/ \
+  --pattern "*.pgen" \
+  --database genotype_converter.sqlite \
+  --species bos_taurus \
+  --assembly ARS_UCD_v2_0 \
+  --manifest-name bovinehd_manifest_b \
+  --from-format TOP \
+  --to-format PLUS \
+  --outdir converted_pfiles/
 ```
 
 To inspect a proposed source folder without running a build:
