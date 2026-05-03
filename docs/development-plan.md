@@ -49,6 +49,12 @@ Possible commands:
 ```bash
 genotype-converter db init --database genotype_converter.sqlite
 
+genotype-converter db build \
+  --source-root database_sources \
+  --database genotype_converter.sqlite \
+  --build-outdir database_build \
+  --workers 1
+
 genotype-converter db import-lookup \
   --database genotype_converter.sqlite \
   --lookup manifest.reference.lookup.csv \
@@ -82,6 +88,7 @@ Stage 1 is implemented for existing lookup files:
 - query rules for a marker
 - export marker query results as table, CSV, or JSON
 - discover source-folder contents without running build
+- build and import source folders with one reference per species/assembly folder
 
 Stage 2 has explicit-context database conversion:
 
@@ -90,8 +97,7 @@ Stage 2 has explicit-context database conversion:
 - `genotype-converter convert-pfile` can use `--database` instead of `--lookup`
 - `--species`, `--assembly`, and `--manifest-name` are required in database mode
 
-The database still does not run `build` from source folders. Manifest inference
-from neighboring markers is not implemented.
+Manifest inference from neighboring markers is not implemented.
 
 ### Duplicate Marker Names
 

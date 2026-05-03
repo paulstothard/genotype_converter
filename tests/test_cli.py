@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+from pathlib import Path
 
 from click.testing import CliRunner
 
@@ -29,6 +30,7 @@ def test_db_options_are_shown_in_help():
     assert result.exit_code == 0, result.output
     for command in [
         "init",
+        "build",
         "import-lookup",
         "list-species",
         "list-assemblies",
@@ -365,6 +367,90 @@ def test_db_cli_discovers_source_folders():
     assert rows[0]["assembly"] == "ARS_UCD_v2_0"
     assert rows[0]["manifest_count"] == "1"
     assert rows[0]["reference_count"] == "1"
+
+
+def test_db_cli_builds_from_source_root(tmp_path):
+    db_path = tmp_path / "conversion.sqlite"
+    build_outdir = tmp_path / "build"
+    runner = CliRunner()
+
+    result = runner.invoke(
+        main,
+        [
+            "db",
+            "build",
+            "--source-root",
+            "tests/data/database_sources",
+            "--database",
+            str(db_path),
+            "--build-outdir",
+            str(build_outdir),
+            "--workers",
+            "1",
+            "--no-progress",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Database build complete: 1 lookup source(s), 8 marker rules imported." in result.output
+
+    marker_result = runner.invoke(
+        main,
+        [
+            "db",
+            "marker",
+            "--database",
+            str(db_path),
+            "--species",
+            "bos_taurus",
+            "--assembly",
+            "ARS_UCD_v2_0",
+            "--manifest-name",
+            "tiny_bovine_manifest",
+            "--marker",
+            "SNP2",
+            "--format",
+            "json",
+        ],
+    )
+    assert marker_result.exit_code == 0, marker_result.output
+    marker_rows = json.loads(marker_result.output)
+    assert marker_rows[0]["A_in_PLUS"] == "T"
+
+
+def test_db_cli_build_requires_one_reference(tmp_path):
+    source_root = tmp_path / "sources"
+    source_dir = source_root / "bos_taurus" / "ARS_UCD_v2_0"
+    manifests_dir = source_dir / "manifests"
+    references_dir = source_dir / "references"
+    manifests_dir.mkdir(parents=True)
+    references_dir.mkdir(parents=True)
+    fixture_root = Path("tests/data/database_sources/bos_taurus/ARS_UCD_v2_0")
+    (manifests_dir / "tiny.csv").write_text(
+        (fixture_root / "manifests/tiny_bovine_manifest.csv").read_text()
+    )
+    reference_text = (fixture_root / "references/tiny_reference.fa").read_text()
+    (references_dir / "ref_a.fa").write_text(reference_text)
+    (references_dir / "ref_b.fa").write_text(reference_text)
+    runner = CliRunner()
+
+    result = runner.invoke(
+        main,
+        [
+            "db",
+            "build",
+            "--source-root",
+            str(source_root),
+            "--database",
+            str(tmp_path / "conversion.sqlite"),
+            "--build-outdir",
+            str(tmp_path / "build"),
+            "--no-progress",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "Expected exactly one reference file" in result.output
 
 
 def test_convert_plink_command_accepts_bfile_dir(pipeline_output, tmp_path):

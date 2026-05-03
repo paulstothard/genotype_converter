@@ -346,6 +346,19 @@ genotype-converter db discover-sources \
   --format table
 ```
 
+To build and import a source folder:
+
+```bash
+genotype-converter db build \
+  --source-root database_sources \
+  --database genotype_converter.sqlite \
+  --build-outdir database_build \
+  --workers 1
+```
+
+Each species/assembly folder should contain one reference file and one or more
+manifest files.
+
 ---
 
 ## End-to-end example

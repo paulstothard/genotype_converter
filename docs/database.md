@@ -119,3 +119,23 @@ database_sources/
 
 Discovery reports species, assembly, manifest files, and reference files. It
 does not run alignment or import anything.
+
+## Source Folder Build
+
+The same folder layout can be built and imported:
+
+```bash
+genotype-converter db build \
+  --source-root database_sources \
+  --database genotype_converter.sqlite \
+  --build-outdir database_build \
+  --workers 1
+```
+
+Each assembly folder must contain one reference file in `references/` and one or
+more manifest files in `manifests/`. The command runs `build` once for each
+manifest, writes the normal build outputs under `--build-outdir`, and imports
+the generated lookup CSV into SQLite.
+
+Use `--workers 1` for large references unless the machine has enough memory for
+additional minimap2 indexes.

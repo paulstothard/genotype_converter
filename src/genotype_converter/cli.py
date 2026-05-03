@@ -87,6 +87,10 @@ def _echo_rows(rows, fieldnames: list[str], output_format: str) -> None:
         click.echo("\t".join(str(row.get(field, "") or "") for field in fieldnames))
 
 
+def _manifest_name_from_path(path: str) -> str:
+    return Path(path).stem.replace(".", "_")
+
+
 def _load_conversion_table(lookup, database, species, assembly, manifest_name, context: str):
     _require_one_input(lookup, database, "--lookup", "--database")
     if lookup:
@@ -206,6 +210,83 @@ def db_import_lookup_cmd(database, lookup, species, assembly, manifest_name,
     )
     if stats.rows_replaced:
         click.echo("Replaced existing source with the same lookup checksum.")
+
+
+@db_cmd.command("build")
+@click.option("--source-root", required=True, type=click.Path(exists=True, file_okay=False),
+              help="Root folder organized as species/assembly/manifests and references")
+@click.option("--database", required=True, help="SQLite database path")
+@click.option("--build-outdir", default="database_build", show_default=True,
+              help="Directory for generated build outputs")
+@click.option("--workers", default=1, show_default=True,
+              help="Worker processes for each build. Use 1 for large references unless memory is available.")
+@click.option("--replace/--no-replace", default=False, show_default=True,
+              help="Replace existing imports with the same species, assembly, manifest, and lookup checksum")
+@click.option("--progress/--no-progress", default=True, show_default=True,
+              help="Show build progress")
+def db_build_cmd(source_root, database, build_outdir, workers, replace, progress):
+    """Build lookup files from source folders and import them into SQLite."""
+    folders = discover_source_folders(source_root)
+    if not folders:
+        raise click.ClickException(f"No source folders found under {source_root}")
+
+    total_imported = 0
+    total_rules = 0
+    for folder in folders:
+        if not folder.manifest_paths:
+            raise click.ClickException(
+                f"No manifest files found in {Path(folder.root_path) / 'manifests'}"
+            )
+        if len(folder.reference_paths) != 1:
+            raise click.ClickException(
+                f"Expected exactly one reference file in "
+                f"{Path(folder.root_path) / 'references'}, found {len(folder.reference_paths)}"
+            )
+        reference_path = folder.reference_paths[0]
+        for manifest_path in folder.manifest_paths:
+            manifest_name = _manifest_name_from_path(manifest_path)
+            click.echo(
+                f"Building {folder.species}/{folder.assembly}/{manifest_name}"
+            )
+            build_stats = run(
+                manifest_path=manifest_path,
+                reference_path=reference_path,
+                outdir=build_outdir,
+                species=folder.species,
+                workers=workers,
+                save_alignment=False,
+                save_parquet=False,
+                progress=progress,
+            )
+            lookup_path = next(
+                (path for path in build_stats.output_files if path.endswith(".lookup.csv")),
+                None,
+            )
+            if lookup_path is None:
+                raise click.ClickException(
+                    f"Build did not produce a lookup CSV for {manifest_path}"
+                )
+            import_stats = import_lookup(
+                database_path=database,
+                lookup_path=lookup_path,
+                species=folder.species,
+                assembly=folder.assembly,
+                manifest_name=manifest_name,
+                manifest_path=manifest_path,
+                reference_name=Path(reference_path).name,
+                reference_path=reference_path,
+                replace=replace,
+            )
+            total_imported += 1
+            total_rules += import_stats.rows_imported
+            click.echo(
+                f"Imported {import_stats.rows_imported} marker rules from {lookup_path}"
+            )
+
+    click.echo(
+        f"Database build complete: {total_imported} lookup source(s), "
+        f"{total_rules} marker rules imported."
+    )
 
 
 @db_cmd.command("list-species")
