@@ -255,6 +255,30 @@ Batch conversion still needs to:
 - refine mixed-manifest reports so batch outputs can also include per-file
   resolution summaries
 
+### Post-v0.1.1 Planning Notes
+
+The v0.1.1 release covers the core database conversion workflow:
+
+- database initialization, source-folder build/import, lookup import, and query
+- CSV, PLINK 1, and PLINK 2 conversion from lookup CSVs or SQLite
+- whole-input manifest inference when `--manifest-name` is omitted
+- per-marker mixed-manifest resolution with marker-resolution reports
+- ambiguity handling with fail or skip behavior
+- a runnable mixed-manifest example under `examples/mixed_manifests/`
+
+Future work to preserve:
+
+- Add database maintenance commands for removing stale sources, replacing by
+  manifest/source context, and validating database contents.
+- Improve batch reports with per-file mixed-manifest summaries in addition to
+  the global marker-resolution report.
+- Record a short bovine validation status note after the next full validation
+  run, including command, date, code version, and remaining discrepancy counts.
+- Decide whether distribution remains GitHub/source-install only or should add
+  package publishing.
+- Refine nearby-marker/window scoring only if real mixed-manifest data shows
+  the current conservative heuristic is too simple.
+
 ### Database Test Fixture
 
 The repository includes a tiny source-folder fixture at
