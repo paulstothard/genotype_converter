@@ -10,9 +10,21 @@ data/*
 old_pipeline/*
 new_pipeline/*
 reports/*
+mixed_manifest/sources/*/*/manifests/*
+mixed_manifest/sources/*/*/references/*
+mixed_manifest/sources/*/*/genotypes/*
+mixed_manifest/database_build/*
+mixed_manifest/converted/*
+mixed_manifest/reports/*
+mixed_manifest/*.sqlite
+mixed_manifest/*.sqlite3
+mixed_manifest/*.sqlite-journal
+mixed_manifest/*.sqlite3-journal
 
 # Allow directory placeholders.
 !data/.gitkeep
 !old_pipeline/.gitkeep
 !new_pipeline/.gitkeep
 !reports/.gitkeep
+!mixed_manifest/README.md
+!mixed_manifest/**/.gitkeep
