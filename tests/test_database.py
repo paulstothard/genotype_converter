@@ -262,22 +262,25 @@ def test_import_lookup_requires_replace_for_same_source(pipeline_output, tmp_pat
 
 
 def test_database_source_fixture_contains_expected_layout():
-    root = Path("tests/data/database_sources/bos_taurus/ARS_UCD_v2_0")
+    root = Path("tests/data/database_sources/bos_taurus")
     assert (root / "manifests/tiny_bovine_manifest.csv").is_file()
-    assert (root / "references/tiny_reference.fa").is_file()
+    assert (root / "references/ARS_UCD_v2_0/tiny_reference.fa").is_file()
+    assert (root / "references/ARS_UCD1_2/tiny_reference.fa").is_file()
     assert (root / "genotypes/tiny_top_wide.csv").is_file()
 
 
 def test_discover_source_folders_reads_tiny_fixture():
     folders = discover_source_folders("tests/data/database_sources")
 
-    assert len(folders) == 1
-    folder = folders[0]
-    assert folder.species == "bos_taurus"
-    assert folder.assembly == "ARS_UCD_v2_0"
-    assert [Path(path).name for path in folder.manifest_paths] == [
-        "tiny_bovine_manifest.csv"
-    ]
-    assert [Path(path).name for path in folder.reference_paths] == [
-        "tiny_reference.fa"
-    ]
+    assert [folder.assembly for folder in folders] == ["ARS_UCD1_2", "ARS_UCD_v2_0"]
+    for folder in folders:
+        assert folder.species == "bos_taurus"
+        assert Path(folder.root_path).name == "bos_taurus"
+        assert Path(folder.manifest_root_path).name == "manifests"
+        assert Path(folder.reference_root_path).name == folder.assembly
+        assert [Path(path).name for path in folder.manifest_paths] == [
+            "tiny_bovine_manifest.csv"
+        ]
+        assert [Path(path).name for path in folder.reference_paths] == [
+            "tiny_reference.fa"
+        ]

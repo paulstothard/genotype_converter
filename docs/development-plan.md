@@ -14,7 +14,8 @@ conversion information across many manifests, species, and assemblies.
 - Let users convert genotype files by marker name without manually selecting a
   single lookup CSV for every run.
 - Support multiple species and reference assemblies.
-- Support multiple manifests per species/assembly.
+- Support multiple manifests per species, with conversion records generated for
+  each manifest/reference pair.
 - Preserve marker provenance so the same marker name can appear in more than
   one manifest without losing which rule came from which source.
 - Handle SNPs and indels consistently.
@@ -27,22 +28,19 @@ Use a structured data folder such as:
 ```text
 database_sources/
   bos_taurus/
-    ARS_UCD_v2_0/
-      references/
+    manifests/
+      bovinehd-manifest-b.csv
+      other-panel.csv
+    references/
+      ARS_UCD_v2_0/
         ARS_UCD_v2.0.fa
-      manifests/
-        bovinehd-manifest-b.csv
-        other-panel.csv
-    ARS_UCD1_2/
-      references/
+      ARS_UCD1_2/
         ARS-UCD1.2.fa
-      manifests/
-        ...
 ```
 
 The database builder would scan this folder, run or reuse `build` outputs for
-each manifest/reference pair, and load the resulting conversion records into an
-SQLite database.
+each manifest/reference pair within a species, and load the resulting
+conversion records into an SQLite database.
 
 Possible commands:
 
@@ -88,7 +86,8 @@ Stage 1 is implemented for existing lookup files:
 - query rules for a marker
 - export marker query results as table, CSV, or JSON
 - discover source-folder contents without running build
-- build and import source folders with one reference per species/assembly folder
+- build and import source folders with species-level manifests and one reference
+  FASTA per `references/<assembly>/` folder
 
 Stage 2 has database conversion:
 
@@ -288,11 +287,12 @@ and mirrors the proposed user-facing folder organization:
 ```text
 tests/data/database_sources/
   bos_taurus/
-    ARS_UCD_v2_0/
-      manifests/
-      references/
-      genotypes/
-      expected/
+    manifests/
+    references/
+      ARS_UCD_v2_0/
+      ARS_UCD1_2/
+    genotypes/
+    expected/
 ```
 
 Future database code should first prove that it can discover and build from this

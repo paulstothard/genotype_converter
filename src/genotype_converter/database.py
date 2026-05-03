@@ -49,6 +49,8 @@ class SourceFolder:
     species: str
     assembly: str
     root_path: str
+    manifest_root_path: str
+    reference_root_path: str
     manifest_paths: list[str]
     reference_paths: list[str]
 
@@ -690,9 +692,42 @@ def discover_source_folders(source_root: str) -> list[SourceFolder]:
 
     discovered: list[SourceFolder] = []
     for species_dir in sorted(path for path in root.iterdir() if path.is_dir()):
-        for assembly_dir in sorted(path for path in species_dir.iterdir() if path.is_dir()):
+        shared_manifests_dir = species_dir / "manifests"
+        shared_references_dir = species_dir / "references"
+        shared_manifest_paths = _discover_files(shared_manifests_dir, {".csv", ".txt"})
+        uses_shared_layout = shared_manifests_dir.is_dir() or shared_references_dir.is_dir()
+        if shared_references_dir.is_dir():
+            for reference_dir in sorted(
+                path for path in shared_references_dir.iterdir() if path.is_dir()
+            ):
+                reference_paths = _discover_files(
+                    reference_dir,
+                    {".fa", ".fasta", ".fna", ".fas"},
+                )
+                discovered.append(
+                    SourceFolder(
+                        species=species_dir.name,
+                        assembly=reference_dir.name,
+                        root_path=str(species_dir),
+                        manifest_root_path=str(shared_manifests_dir),
+                        reference_root_path=str(reference_dir),
+                        manifest_paths=[str(path) for path in shared_manifest_paths],
+                        reference_paths=[str(path) for path in reference_paths],
+                    )
+                )
+        if uses_shared_layout:
+            continue
+
+        legacy_skip = {"manifests", "references", "genotypes", "expected"}
+        for assembly_dir in sorted(
+            path
+            for path in species_dir.iterdir()
+            if path.is_dir() and path.name not in legacy_skip
+        ):
             manifests_dir = assembly_dir / "manifests"
             references_dir = assembly_dir / "references"
+            if not manifests_dir.is_dir() and not references_dir.is_dir():
+                continue
             manifest_paths = _discover_files(manifests_dir, {".csv", ".txt"})
             reference_paths = _discover_files(
                 references_dir,
@@ -703,6 +738,8 @@ def discover_source_folders(source_root: str) -> list[SourceFolder]:
                     species=species_dir.name,
                     assembly=assembly_dir.name,
                     root_path=str(assembly_dir),
+                    manifest_root_path=str(manifests_dir),
+                    reference_root_path=str(references_dir),
                     manifest_paths=[str(path) for path in manifest_paths],
                     reference_paths=[str(path) for path in reference_paths],
                 )

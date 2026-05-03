@@ -208,9 +208,14 @@ Expected folder shape:
 ```text
 database_sources/
   bos_taurus/
-    ARS_UCD_v2_0/
-      manifests/
-      references/
+    manifests/
+      bovinehd-manifest-b.csv
+      other-panel.csv
+    references/
+      ARS_UCD_v2_0/
+        ARS_UCD_v2.0.fa
+      ARS_UCD1_2/
+        ARS-UCD1.2.fa
 ```
 
 Discovery reports species, assembly, manifest files, and reference files. It
@@ -228,10 +233,11 @@ genotype-converter db build \
   --workers 1
 ```
 
-Each assembly folder must contain one reference file in `references/` and one or
-more manifest files in `manifests/`. The command runs `build` once for each
-manifest, writes the normal build outputs under `--build-outdir`, and imports
-the generated lookup CSV into SQLite.
+Each species folder contains one shared manifest set in `manifests/` and one or
+more reference genome folders under `references/<assembly>/`. Each assembly
+folder must contain exactly one reference FASTA. The command runs `build` once
+for every manifest/reference pair in a species, writes the normal build outputs
+under `--build-outdir`, and imports the generated lookup CSV into SQLite.
 
 Use `--workers 1` for large references unless the machine has enough memory for
 additional minimap2 indexes.

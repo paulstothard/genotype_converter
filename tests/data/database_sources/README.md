@@ -9,21 +9,23 @@ Expected layout:
 ```text
 database_sources/
   bos_taurus/
-    ARS_UCD_v2_0/
-      manifests/
-        tiny_bovine_manifest.csv
-      references/
+    manifests/
+      tiny_bovine_manifest.csv
+    references/
+      ARS_UCD_v2_0/
         tiny_reference.fa
-      genotypes/
-        tiny_top_wide.csv
-        tiny_top_long.csv
-      expected/
-        tiny_lookup_markers.txt
+      ARS_UCD1_2/
+        tiny_reference.fa
+    genotypes/
+      tiny_top_wide.csv
+      tiny_top_long.csv
+    expected/
+      tiny_lookup_markers.txt
 ```
 
 Future database tests should use this fixture to verify that a database builder
-can discover species, assemblies, manifests, and references from folders before
-using any full validation data.
+can discover species-level manifests and pair them with each reference assembly
+before using any full validation data.
 
 The fixture intentionally uses tiny synthetic test data. Do not replace these
 files with real panel-scale manifests or generated validation output.

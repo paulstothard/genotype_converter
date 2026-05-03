@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+import sqlite3
 from pathlib import Path
 
 from click.testing import CliRunner
@@ -689,10 +690,10 @@ def test_db_cli_discovers_source_folders():
 
     assert result.exit_code == 0, result.output
     rows = list(csv.DictReader(result.output.splitlines()))
-    assert rows[0]["species"] == "bos_taurus"
-    assert rows[0]["assembly"] == "ARS_UCD_v2_0"
-    assert rows[0]["manifest_count"] == "1"
-    assert rows[0]["reference_count"] == "1"
+    assert [row["assembly"] for row in rows] == ["ARS_UCD1_2", "ARS_UCD_v2_0"]
+    assert {row["species"] for row in rows} == {"bos_taurus"}
+    assert {row["manifest_count"] for row in rows} == {"1"}
+    assert {row["reference_count"] for row in rows} == {"1"}
 
 
 def test_db_cli_builds_from_source_root(tmp_path):
@@ -718,7 +719,15 @@ def test_db_cli_builds_from_source_root(tmp_path):
     )
 
     assert result.exit_code == 0, result.output
-    assert "Database build complete: 1 lookup source(s), 8 marker rules imported." in result.output
+    assert "Database build complete: 2 lookup source(s), 16 marker rules imported." in result.output
+
+    with sqlite3.connect(db_path) as conn:
+        sources = conn.execute(
+            "SELECT assembly, manifest_name, lookup_path FROM lookup_sources ORDER BY assembly"
+        ).fetchall()
+    assert [row[0] for row in sources] == ["ARS_UCD1_2", "ARS_UCD_v2_0"]
+    assert {row[1] for row in sources} == {"tiny_bovine_manifest"}
+    assert len({row[2] for row in sources}) == 2
 
     marker_result = runner.invoke(
         main,
@@ -746,16 +755,16 @@ def test_db_cli_builds_from_source_root(tmp_path):
 
 def test_db_cli_build_requires_one_reference(tmp_path):
     source_root = tmp_path / "sources"
-    source_dir = source_root / "bos_taurus" / "ARS_UCD_v2_0"
-    manifests_dir = source_dir / "manifests"
-    references_dir = source_dir / "references"
+    species_dir = source_root / "bos_taurus"
+    manifests_dir = species_dir / "manifests"
+    references_dir = species_dir / "references" / "ARS_UCD_v2_0"
     manifests_dir.mkdir(parents=True)
     references_dir.mkdir(parents=True)
-    fixture_root = Path("tests/data/database_sources/bos_taurus/ARS_UCD_v2_0")
+    fixture_root = Path("tests/data/database_sources/bos_taurus")
     (manifests_dir / "tiny.csv").write_text(
         (fixture_root / "manifests/tiny_bovine_manifest.csv").read_text()
     )
-    reference_text = (fixture_root / "references/tiny_reference.fa").read_text()
+    reference_text = (fixture_root / "references/ARS_UCD_v2_0/tiny_reference.fa").read_text()
     (references_dir / "ref_a.fa").write_text(reference_text)
     (references_dir / "ref_b.fa").write_text(reference_text)
     runner = CliRunner()

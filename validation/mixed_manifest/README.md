@@ -14,29 +14,24 @@ ignored.
 validation/mixed_manifest/
   sources/
     bos_taurus/
-      ARS_UCD1_2/
-        manifests/
-          <manifest-a>.csv
-        references/          # required directory name; put one FASTA here
+      manifests/
+        <manifest-a>.csv
+        <manifest-b>.csv
+      references/
+        ARS_UCD1_2/
           <ARS-UCD1.2-reference>.fa
-        genotypes/
-          <genotype-file-or-folder-inputs>
-      ARS_UCD_v2_0/
-        manifests/
-          <manifest-a>.csv
-          <manifest-b>.csv
-        references/          # required directory name; put one FASTA here
-          <reference>.fa
-        genotypes/
-          <genotype-file-or-folder-inputs>
+        ARS_UCD_v2_0/
+          <ARS-UCD-v2.0-reference>.fa
+      genotypes/
+        <cattle-genotype-file-or-folder-inputs>
     sus_scrofa/
-      Sscrofa11_1/
-        manifests/
-          <pig-manifest>.csv
-        references/          # required directory name; put one FASTA here
+      manifests/
+        <pig-manifest>.csv
+      references/
+        Sscrofa11_1/
           <Sscrofa11.1-reference>.fa
-        genotypes/
-          <genotype-file-or-folder-inputs>
+      genotypes/
+        <pig-genotype-file-or-folder-inputs>
   database_build/
   converted/
   reports/
@@ -52,26 +47,29 @@ Use stable scientific species labels for folder names:
 - cattle or bovine: `bos_taurus`
 - pig or porcine: `sus_scrofa`
 
-Use the reference genome or assembly name for the assembly folder, for example
-`ARS_UCD_v2_0`, `ARS_UCD1_2`, or `Sscrofa11_1`. The CLI `--species` and
-`--assembly` values must exactly match these folder names.
+Put manifests directly under the species, independent of reference genomes. Put
+reference genomes under `references/<assembly>/`, for example `ARS_UCD_v2_0`,
+`ARS_UCD1_2`, or `Sscrofa11_1`. The CLI `--species` and `--assembly` values
+must exactly match these folder names.
 
-Each `sources/<species>/<assembly>/` folder is one build target. It can contain
-many manifests, but it should contain exactly one matching reference FASTA in
-`references/`. A reference FASTA can contain many chromosomes or contigs. If the
-same assembly is represented by substantially different FASTA files, such as
-soft-masked and unmasked versions, create separate assembly folders with clear
-names instead of mixing them in one folder.
+Each `sources/<species>/` folder can contain many manifests and many reference
+genomes. The database builder generates conversion information for every
+manifest/reference pair within that species. For example, if `bos_taurus` has
+two manifests and two reference genome folders, the build creates four lookup
+sources in the SQLite database.
+
+Each `references/<assembly>/` folder should contain exactly one matching FASTA.
+A reference FASTA can contain many chromosomes or contigs. If the same assembly
+is represented by substantially different FASTA files, such as soft-masked and
+unmasked versions, create separate assembly folders with clear names instead of
+mixing them in one folder.
 
 ## What To Add
 
-- Put manifest CSVs for an assembly in
-  `sources/<species>/<assembly>/manifests/`.
+- Put manifest CSVs for a species in `sources/<species>/manifests/`.
 - Put exactly one matching reference FASTA in
-  `sources/<species>/<assembly>/references/`. The directory name is plural
-  because it is part of the database source-folder convention.
-- Put genotype files to convert in
-  `sources/<species>/<assembly>/genotypes/`.
+  `sources/<species>/references/<assembly>/`.
+- Put genotype files to convert in `sources/<species>/genotypes/`.
 
 If a reference is supplied as multiple FASTA files, make a single combined FASTA
 for this validation workspace before building the database.
@@ -91,9 +89,10 @@ genotype-converter db build \
   --progress
 ```
 
-This discovers every complete `sources/<species>/<assembly>/` folder under the
-source root. Use `--workers 1` for large livestock references unless the machine
-has enough memory for one minimap2 reference index per worker.
+This discovers each species-level manifest set and pairs it with every reference
+assembly under that species. Use `--workers 1` for large livestock references
+unless the machine has enough memory for one minimap2 reference index per
+worker.
 
 ## Inspect Imported Manifests
 
@@ -111,7 +110,7 @@ Change `--species` and `--assembly` to inspect another folder, such as
 
 ```bash
 genotype-converter convert \
-  --genotypes-dir validation/mixed_manifest/sources/bos_taurus/ARS_UCD_v2_0/genotypes \
+  --genotypes-dir validation/mixed_manifest/sources/bos_taurus/genotypes \
   --pattern "*.csv" \
   --database validation/mixed_manifest/mixed_manifest.sqlite \
   --species bos_taurus \
@@ -139,7 +138,7 @@ For PLINK 1 binary filesets:
 
 ```bash
 genotype-converter convert-plink \
-  --bfile-dir validation/mixed_manifest/sources/bos_taurus/ARS_UCD_v2_0/genotypes \
+  --bfile-dir validation/mixed_manifest/sources/bos_taurus/genotypes \
   --pattern "*.bed" \
   --database validation/mixed_manifest/mixed_manifest.sqlite \
   --species bos_taurus \
@@ -156,7 +155,7 @@ For PLINK 2 p-files:
 
 ```bash
 genotype-converter convert-pfile \
-  --pfile-dir validation/mixed_manifest/sources/bos_taurus/ARS_UCD_v2_0/genotypes \
+  --pfile-dir validation/mixed_manifest/sources/bos_taurus/genotypes \
   --pattern "*.pgen" \
   --database validation/mixed_manifest/mixed_manifest.sqlite \
   --species bos_taurus \

@@ -5,10 +5,11 @@ from pathlib import Path
 
 
 def test_database_source_fixture_layout_is_available():
-    root = Path("tests/data/database_sources/bos_taurus/ARS_UCD_v2_0")
+    root = Path("tests/data/database_sources/bos_taurus")
 
     assert (root / "manifests/tiny_bovine_manifest.csv").is_file()
-    assert (root / "references/tiny_reference.fa").is_file()
+    assert (root / "references/ARS_UCD_v2_0/tiny_reference.fa").is_file()
+    assert (root / "references/ARS_UCD1_2/tiny_reference.fa").is_file()
     assert (root / "genotypes/tiny_top_wide.csv").is_file()
     assert (root / "genotypes/tiny_top_long.csv").is_file()
     assert (root / "expected/tiny_lookup_markers.txt").is_file()

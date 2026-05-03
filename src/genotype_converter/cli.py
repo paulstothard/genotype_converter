@@ -490,7 +490,7 @@ def db_import_lookup_cmd(database, lookup, species, assembly, manifest_name,
 
 @db_cmd.command("build")
 @click.option("--source-root", required=True, type=click.Path(exists=True, file_okay=False),
-              help="Root folder organized as species/assembly/manifests and references")
+              help="Root folder organized as species/manifests and species/references/<assembly>")
 @click.option("--database", required=True, help="SQLite database path")
 @click.option("--build-outdir", default="database_build", show_default=True,
               help="Directory for generated build outputs")
@@ -511,23 +511,24 @@ def db_build_cmd(source_root, database, build_outdir, workers, replace, progress
     for folder in folders:
         if not folder.manifest_paths:
             raise click.ClickException(
-                f"No manifest files found in {Path(folder.root_path) / 'manifests'}"
+                f"No manifest files found in {folder.manifest_root_path}"
             )
         if len(folder.reference_paths) != 1:
             raise click.ClickException(
                 f"Expected exactly one reference file in "
-                f"{Path(folder.root_path) / 'references'}, found {len(folder.reference_paths)}"
+                f"{folder.reference_root_path}, found {len(folder.reference_paths)}"
             )
         reference_path = folder.reference_paths[0]
         for manifest_path in folder.manifest_paths:
             manifest_name = _manifest_name_from_path(manifest_path)
+            source_build_outdir = str(Path(build_outdir) / folder.species / folder.assembly)
             click.echo(
                 f"Building {folder.species}/{folder.assembly}/{manifest_name}"
             )
             build_stats = run(
                 manifest_path=manifest_path,
                 reference_path=reference_path,
-                outdir=build_outdir,
+                outdir=source_build_outdir,
                 species=folder.species,
                 workers=workers,
                 save_alignment=False,
@@ -630,7 +631,7 @@ def db_marker_cmd(database, species, assembly, marker_name, manifest_name, outpu
 
 @db_cmd.command("discover-sources")
 @click.option("--source-root", required=True, type=click.Path(exists=True, file_okay=False),
-              help="Root folder organized as species/assembly/manifests and references")
+              help="Root folder organized as species/manifests and species/references/<assembly>")
 @click.option("--format", "output_format", default="table", show_default=True,
               type=click.Choice(["table", "csv", "json"]),
               help="Output format")
@@ -642,6 +643,8 @@ def db_discover_sources_cmd(source_root, output_format):
             "species": folder.species,
             "assembly": folder.assembly,
             "root_path": folder.root_path,
+            "manifest_root_path": folder.manifest_root_path,
+            "reference_root_path": folder.reference_root_path,
             "manifest_count": len(folder.manifest_paths),
             "reference_count": len(folder.reference_paths),
             "manifest_paths": ";".join(folder.manifest_paths),
@@ -650,7 +653,8 @@ def db_discover_sources_cmd(source_root, output_format):
         for folder in folders
     ]
     fieldnames = [
-        "species", "assembly", "root_path", "manifest_count", "reference_count",
+        "species", "assembly", "root_path", "manifest_root_path",
+        "reference_root_path", "manifest_count", "reference_count",
         "manifest_paths", "reference_paths",
     ]
     _echo_rows(rows, fieldnames, output_format)

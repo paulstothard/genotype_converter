@@ -10,9 +10,9 @@ data/*
 old_pipeline/*
 new_pipeline/*
 reports/*
-mixed_manifest/sources/*/*/manifests/*
-mixed_manifest/sources/*/*/references/*
-mixed_manifest/sources/*/*/genotypes/*
+mixed_manifest/sources/*/manifests/*
+mixed_manifest/sources/*/references/*/*
+mixed_manifest/sources/*/genotypes/*
 mixed_manifest/database_build/*
 mixed_manifest/converted/*
 mixed_manifest/reports/*

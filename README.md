@@ -385,8 +385,11 @@ genotype-converter db build \
   --workers 1
 ```
 
-Each species/assembly folder should contain one reference file and one or more
-manifest files.
+Arrange database sources as `database_sources/<species>/manifests/` plus
+`database_sources/<species>/references/<assembly>/`. Manifests are independent
+of reference genomes; the database builder generates conversion information for
+every manifest/reference pair in a species. Each reference assembly folder
+should contain exactly one FASTA file.
 
 ---
 
