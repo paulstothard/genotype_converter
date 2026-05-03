@@ -10,7 +10,7 @@ usage() {
 Inspect mixed-manifest database source discovery without running any builds.
 
 Usage:
-  validation/mixed_manifest/run_discover_sources.sh [options]
+  validation/mixed_manifest/scripts/run_discover_sources.sh [options]
 
 Options:
   --source-root PATH   Source root. Default: validation/mixed_manifest/sources

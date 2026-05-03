@@ -7,12 +7,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parent
-SOURCE_ROOT = ROOT / "sources"
-OUT_ROOT = ROOT / "converted" / "example_conversions"
-REPORT_ROOT = ROOT / "reports" / "example_conversions"
-SUMMARY_CSV = ROOT / "reports" / "example_conversion_check.csv"
-SUMMARY_MD = ROOT / "reports" / "example_conversion_check.md"
+WORKSPACE_ROOT = Path(__file__).resolve().parents[1]
+SOURCE_ROOT = WORKSPACE_ROOT / "sources"
+OUT_ROOT = WORKSPACE_ROOT / "converted" / "example_conversions"
+REPORT_ROOT = WORKSPACE_ROOT / "reports" / "example_conversions"
+SUMMARY_CSV = WORKSPACE_ROOT / "reports" / "example_conversion_check.csv"
+SUMMARY_MD = WORKSPACE_ROOT / "reports" / "example_conversion_check.md"
 
 
 @dataclass(frozen=True)

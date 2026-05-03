@@ -8,7 +8,7 @@ usage() {
 Compare the current full bovine HD validation outputs.
 
 Usage:
-  validation/run_bovine_hd_compare.sh [options]
+  validation/scripts/run_bovine_hd_compare.sh [options]
 
 Options:
   --env NAME    Conda environment. Default: genotype-converter-env
@@ -37,4 +37,4 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-conda run -n "${ENV_NAME}" python validation/compare_outputs.py
+conda run -n "${ENV_NAME}" python validation/scripts/compare_outputs.py

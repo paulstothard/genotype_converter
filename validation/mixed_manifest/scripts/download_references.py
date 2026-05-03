@@ -10,7 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-SOURCE_ROOT = Path(__file__).resolve().parent / "sources"
+WORKSPACE_ROOT = Path(__file__).resolve().parents[1]
+SOURCE_ROOT = WORKSPACE_ROOT / "sources"
 
 
 @dataclass(frozen=True)

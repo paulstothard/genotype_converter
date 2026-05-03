@@ -15,7 +15,7 @@ usage() {
 Run database-backed conversions for the generated mixed-manifest genotype examples.
 
 Usage:
-  validation/mixed_manifest/run_example_conversions.sh [options]
+  validation/mixed_manifest/scripts/run_example_conversions.sh [options]
 
 Options:
   --overwrite          Replace previous example conversion outputs.
@@ -81,7 +81,7 @@ done
 
 if [[ ! -f "${DATABASE}" ]]; then
   echo "Database not found: ${DATABASE}" >&2
-  echo "Run validation/mixed_manifest/run_database_build.sh --yes first." >&2
+  echo "Run validation/mixed_manifest/scripts/run_database_build.sh --yes first." >&2
   exit 2
 fi
 

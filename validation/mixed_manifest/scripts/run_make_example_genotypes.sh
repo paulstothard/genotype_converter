@@ -5,10 +5,14 @@ ENV_NAME="${CONDA_ENV:-genotype-converter-env}"
 
 usage() {
   cat <<'EOF'
-Check mixed-manifest example conversion outputs.
+Generate small synthetic genotype examples from the local mixed-manifest folders.
+
+The script scans each species manifest folder, selects shared and unique
+markers, and writes AB-coded wide CSV, long CSV, PLINK 1, and PLINK 2 examples
+under sources/<species>/genotypes/synthetic_mixed_manifest/.
 
 Usage:
-  validation/mixed_manifest/run_check_example_conversions.sh [options]
+  validation/mixed_manifest/scripts/run_make_example_genotypes.sh [options]
 
 Options:
   --env NAME    Conda environment. Default: genotype-converter-env
@@ -37,4 +41,4 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-conda run -n "${ENV_NAME}" python validation/mixed_manifest/check_example_conversions.py
+conda run -n "${ENV_NAME}" python validation/mixed_manifest/scripts/make_example_genotypes.py

@@ -9,8 +9,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-SOURCE_ROOT = Path(__file__).resolve().parent / "sources"
+REPO_ROOT = Path(__file__).resolve().parents[3]
+WORKSPACE_ROOT = Path(__file__).resolve().parents[1]
+SOURCE_ROOT = WORKSPACE_ROOT / "sources"
 if str(REPO_ROOT / "src") not in sys.path:
     sys.path.insert(0, str(REPO_ROOT / "src"))
 

@@ -12,6 +12,15 @@ ignored.
 
 ```text
 validation/mixed_manifest/
+  scripts/
+    run_make_example_genotypes.sh
+    run_discover_sources.sh
+    run_database_build.sh
+    run_example_conversions.sh
+    run_check_example_conversions.sh
+    make_example_genotypes.py
+    download_references.py
+    check_example_conversions.py
   sources/
     bos_taurus/
       manifests/
@@ -82,7 +91,7 @@ The helper script scans the local manifest folders and writes small AB-coded
 genotype examples for each species:
 
 ```bash
-validation/mixed_manifest/run_make_example_genotypes.sh
+validation/mixed_manifest/scripts/run_make_example_genotypes.sh
 ```
 
 It writes files under:
@@ -124,7 +133,7 @@ contigs.
 ```bash
 conda activate genotype-converter-env
 
-python validation/mixed_manifest/download_references.py
+python validation/mixed_manifest/scripts/download_references.py
 ```
 
 The current downloads are:
@@ -143,17 +152,17 @@ The downloaded FASTA and assembly report files are ignored by Git.
 From the repository root:
 
 ```bash
-validation/mixed_manifest/run_discover_sources.sh
+validation/mixed_manifest/scripts/run_discover_sources.sh
 
-validation/mixed_manifest/run_database_build.sh --yes
+validation/mixed_manifest/scripts/run_database_build.sh --yes
 ```
 
 This discovers each species-level manifest set and pairs it with every reference
 assembly under that species. Use `--workers 1` for large livestock references
 unless the machine has enough memory for one minimap2 reference index per
 worker. The build script requires `--yes` because the mixed-manifest workload
-can be large. Use `validation/mixed_manifest/run_database_build.sh --help` for
-overrides.
+can be large. Use
+`validation/mixed_manifest/scripts/run_database_build.sh --help` for overrides.
 
 ## Inspect Imported Manifests
 
@@ -172,9 +181,9 @@ Change `--species` and `--assembly` to inspect another folder, such as
 After the SQLite database has been built, run all generated example conversions:
 
 ```bash
-validation/mixed_manifest/run_example_conversions.sh --overwrite
+validation/mixed_manifest/scripts/run_example_conversions.sh --overwrite
 
-validation/mixed_manifest/run_check_example_conversions.sh
+validation/mixed_manifest/scripts/run_check_example_conversions.sh
 ```
 
 The conversion script runs CSV wide, CSV long, Illumina/GSGT matrix,

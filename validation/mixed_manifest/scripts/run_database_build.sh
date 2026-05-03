@@ -18,7 +18,7 @@ This can be a very large run. It builds every manifest/reference pair found
 under the source root. Use the discover script first to check the workload.
 
 Usage:
-  validation/mixed_manifest/run_database_build.sh --yes [options]
+  validation/mixed_manifest/scripts/run_database_build.sh --yes [options]
 
 Options:
   --yes                Required confirmation to run the build.
@@ -84,7 +84,7 @@ done
 
 if [[ "${YES}" -ne 1 ]]; then
   echo "Refusing to start a large database build without --yes." >&2
-  echo "Run validation/mixed_manifest/run_discover_sources.sh first to inspect the workload." >&2
+  echo "Run validation/mixed_manifest/scripts/run_discover_sources.sh first to inspect the workload." >&2
   exit 2
 fi
 

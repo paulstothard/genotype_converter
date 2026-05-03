@@ -15,7 +15,7 @@ usage() {
 Run the full bovine HD build with safe defaults.
 
 Usage:
-  validation/run_bovine_hd_build.sh [options]
+  validation/scripts/run_bovine_hd_build.sh [options]
 
 Options:
   --align              Also write the large alignment display file.

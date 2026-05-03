@@ -13,6 +13,10 @@ validation/
   data/
     <panel-manifest>.csv
     <reference-genome>.fa
+  scripts/
+    run_bovine_hd_build.sh
+    run_bovine_hd_compare.sh
+    compare_outputs.py
   old_pipeline/
     <panel>.<reference>.position.csv
     <panel>.<reference>.conversion.csv
@@ -60,7 +64,7 @@ If you want to keep multiple validation panels, create named subfolders such as
 From the repository root:
 
 ```bash
-validation/run_bovine_hd_build.sh
+validation/scripts/run_bovine_hd_build.sh
 ```
 
 Use `--workers 1` explicitly for this full genome. Higher worker counts should
@@ -69,7 +73,8 @@ worker. Add `--align` only when debugging a small subset; for the full bovine HD
 panel it writes a very large alignment display file.
 
 The helper script defaults to `--workers 1`, `--progress`, and the current local
-bovine HD files. Use `validation/run_bovine_hd_build.sh --help` for overrides.
+bovine HD files. Use `validation/scripts/run_bovine_hd_build.sh --help` for
+overrides.
 
 The generated files will be under:
 
@@ -132,7 +137,7 @@ insertion/deletion near the tracked assayed site in the selected alignment.
 The helper script compares the current bovine HD validation files:
 
 ```bash
-validation/run_bovine_hd_compare.sh
+validation/scripts/run_bovine_hd_compare.sh
 ```
 
 It writes:

@@ -9,15 +9,15 @@
   has memory for one minimap2 reference index per worker.
 - Use the validation helper scripts instead of reconstructing long commands by
   hand. The main scripts are:
-  - `validation/run_bovine_hd_build.sh`
-  - `validation/run_bovine_hd_compare.sh`
-  - `validation/mixed_manifest/run_make_example_genotypes.sh`
-  - `validation/mixed_manifest/run_discover_sources.sh`
-  - `validation/mixed_manifest/run_database_build.sh`
-  - `validation/mixed_manifest/run_example_conversions.sh`
-  - `validation/mixed_manifest/run_check_example_conversions.sh`
-- Do not run `validation/run_bovine_hd_build.sh` or
-  `validation/mixed_manifest/run_database_build.sh` unless the user explicitly
+  - `validation/scripts/run_bovine_hd_build.sh`
+  - `validation/scripts/run_bovine_hd_compare.sh`
+  - `validation/mixed_manifest/scripts/run_make_example_genotypes.sh`
+  - `validation/mixed_manifest/scripts/run_discover_sources.sh`
+  - `validation/mixed_manifest/scripts/run_database_build.sh`
+  - `validation/mixed_manifest/scripts/run_example_conversions.sh`
+  - `validation/mixed_manifest/scripts/run_check_example_conversions.sh`
+- Do not run `validation/scripts/run_bovine_hd_build.sh` or
+  `validation/mixed_manifest/scripts/run_database_build.sh` unless the user explicitly
   asks for the large build. The mixed-manifest database build script also
   requires `--yes` to make accidental starts harder.
 - Do not stage or commit large validation inputs or generated outputs under
