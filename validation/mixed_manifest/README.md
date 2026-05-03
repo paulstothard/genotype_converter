@@ -105,20 +105,17 @@ The downloaded FASTA and assembly report files are ignored by Git.
 From the repository root:
 
 ```bash
-conda activate genotype-converter-env
+validation/mixed_manifest/run_discover_sources.sh
 
-genotype-converter db build \
-  --source-root validation/mixed_manifest/sources \
-  --database validation/mixed_manifest/mixed_manifest.sqlite \
-  --build-outdir validation/mixed_manifest/database_build \
-  --workers 1 \
-  --progress
+validation/mixed_manifest/run_database_build.sh --yes
 ```
 
 This discovers each species-level manifest set and pairs it with every reference
 assembly under that species. Use `--workers 1` for large livestock references
 unless the machine has enough memory for one minimap2 reference index per
-worker.
+worker. The build script requires `--yes` because the mixed-manifest workload
+can be large. Use `validation/mixed_manifest/run_database_build.sh --help` for
+overrides.
 
 ## Inspect Imported Manifests
 
