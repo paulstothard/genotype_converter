@@ -53,6 +53,17 @@ class SourceFolder:
     reference_paths: list[str]
 
 
+@dataclass(frozen=True)
+class InferredLookupSource:
+    source_id: int
+    species: str
+    assembly: str
+    manifest_name: str
+    markers_matched: int
+    markers_requested: int
+    source_markers_total: int
+
+
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -352,6 +363,13 @@ def load_lookup_table_from_database(
     manifest_name: str,
 ) -> dict[str, list[dict[str, str]]]:
     source = _single_source(database_path, species, assembly, manifest_name)
+    return load_lookup_table_from_database_source(database_path, int(source["id"]))
+
+
+def load_lookup_table_from_database_source(
+    database_path: str,
+    source_id: int,
+) -> dict[str, list[dict[str, str]]]:
     with connect(database_path) as conn:
         rows = conn.execute(
             """
@@ -359,13 +377,10 @@ def load_lookup_table_from_database(
             WHERE source_id = ?
             ORDER BY marker_name
             """,
-            (source["id"],),
+            (source_id,),
         ).fetchall()
     if not rows:
-        raise ValueError(
-            "No marker rules found for "
-            f"species={species!r}, assembly={assembly!r}, manifest_name={manifest_name!r}"
-        )
+        raise ValueError(f"No marker rules found for lookup source id {source_id}")
 
     table: dict[str, list[dict[str, str]]] = {}
     for row in rows:
@@ -393,6 +408,77 @@ def load_lookup_table_from_database(
         }
         table[marker] = [row_a, row_b]
     return table
+
+
+def infer_lookup_source_for_markers(
+    database_path: str,
+    species: str,
+    assembly: str,
+    marker_names: list[str],
+) -> InferredLookupSource:
+    ordered_markers = [marker for marker in dict.fromkeys(marker_names) if marker]
+    if not ordered_markers:
+        raise ValueError("Cannot infer a manifest because no marker names were found.")
+
+    placeholders = ",".join("?" for _ in ordered_markers)
+    with connect(database_path) as conn:
+        rows = conn.execute(
+            f"""
+            SELECT
+                s.id AS source_id,
+                s.species,
+                s.assembly,
+                s.manifest_name,
+                COUNT(r.marker_name) AS markers_matched,
+                (
+                    SELECT COUNT(*)
+                    FROM marker_rules all_rules
+                    WHERE all_rules.source_id = s.id
+                ) AS source_markers_total
+            FROM lookup_sources s
+            LEFT JOIN marker_rules r
+                ON r.source_id = s.id
+                AND r.marker_name IN ({placeholders})
+            WHERE s.species = ? AND s.assembly = ?
+            GROUP BY s.id
+            HAVING markers_matched > 0
+            ORDER BY markers_matched DESC, s.manifest_name, s.id
+            """,
+            (*ordered_markers, species, assembly),
+        ).fetchall()
+
+    if not rows:
+        preview = ", ".join(ordered_markers[:10])
+        more = f" and {len(ordered_markers) - 10} more" if len(ordered_markers) > 10 else ""
+        raise ValueError(
+            "Could not infer a manifest for "
+            f"species={species!r}, assembly={assembly!r}; no source matched input marker(s): "
+            f"{preview}{more}"
+        )
+
+    best = dict(rows[0])
+    tied = [
+        dict(row) for row in rows
+        if row["markers_matched"] == best["markers_matched"]
+    ]
+    if len(tied) > 1:
+        names = ", ".join(row["manifest_name"] for row in tied)
+        raise ValueError(
+            "Could not infer a unique manifest for "
+            f"species={species!r}, assembly={assembly!r}; tied sources matched "
+            f"{best['markers_matched']}/{len(ordered_markers)} input marker(s): {names}. "
+            "Provide --manifest-name."
+        )
+
+    return InferredLookupSource(
+        source_id=int(best["source_id"]),
+        species=str(best["species"]),
+        assembly=str(best["assembly"]),
+        manifest_name=str(best["manifest_name"]),
+        markers_matched=int(best["markers_matched"]),
+        markers_requested=len(ordered_markers),
+        source_markers_total=int(best["source_markers_total"]),
+    )
 
 
 def _single_source(

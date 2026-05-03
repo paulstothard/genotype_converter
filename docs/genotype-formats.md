@@ -63,7 +63,7 @@ Options:
 | `--database` | unset | SQLite conversion database. |
 | `--species` | required with `--database` | Species name for database-backed conversion. |
 | `--assembly` | required with `--database` | Reference assembly name for database-backed conversion. |
-| `--manifest-name` | required with `--database` | Manifest or panel name for database-backed conversion. |
+| `--manifest-name` | optional with `--database` | Manifest or panel name for database-backed conversion. If omitted, the command tries conservative marker-based inference. |
 | `--from-format` | required | Input encoding: `AB`, `TOP`, `FORWARD`, `DESIGN`, `PLUS`, or `VCF`. |
 | `--to-format` | required | Output encoding. |
 | `--output` | required for single-file mode | Output file path. |
@@ -108,7 +108,9 @@ genotype-converter convert \
   --output mydata_plus.csv
 ```
 
-Database-backed conversion currently requires an explicit `--manifest-name`.
+If `--manifest-name` is omitted, the command chooses the imported lookup source
+that matches the most input markers for the requested species and assembly. It
+fails if no source matches or if the best match is tied.
 
 The CSV batch summary includes:
 
@@ -124,6 +126,10 @@ The CSV batch summary includes:
 | `missing_or_unparsed_genotypes` | Missing or unrecognized genotype cells left unchanged. |
 | `alleles_changed` | Individual allele labels changed. |
 | `unknown_alleles` | Allele labels not found for that marker and input encoding. |
+
+For single-file CSV conversion, the command-line summary also reports missing
+or unparsed genotype cells and unknown allele labels when those counts are
+non-zero.
 
 ## CSV Long
 
@@ -239,7 +245,7 @@ Options:
 | `--database` | unset | SQLite conversion database. |
 | `--species` | required with `--database` | Species name for database-backed conversion. |
 | `--assembly` | required with `--database` | Reference assembly name for database-backed conversion. |
-| `--manifest-name` | required with `--database` | Manifest or panel name for database-backed conversion. |
+| `--manifest-name` | optional with `--database` | Manifest or panel name for database-backed conversion. If omitted, the command tries conservative marker-based inference. |
 | `--from-format` | required | Input `.bim` allele encoding: `AB`, `TOP`, `FORWARD`, `DESIGN`, or `PLUS`. |
 | `--to-format` | required | Output `.bim` allele encoding: `AB`, `TOP`, `FORWARD`, `DESIGN`, or `PLUS`. |
 | `--out` | required for single-fileset mode | Output PLINK 1 binary prefix. |
@@ -358,7 +364,7 @@ Options:
 | `--database` | unset | SQLite conversion database. |
 | `--species` | required with `--database` | Species name for database-backed conversion. |
 | `--assembly` | required with `--database` | Reference assembly name for database-backed conversion. |
-| `--manifest-name` | required with `--database` | Manifest or panel name for database-backed conversion. |
+| `--manifest-name` | optional with `--database` | Manifest or panel name for database-backed conversion. If omitted, the command tries conservative marker-based inference. |
 | `--from-format` | required | Input `.pvar` allele encoding: `AB`, `TOP`, `FORWARD`, `DESIGN`, or `PLUS`. |
 | `--to-format` | required | Output `.pvar` allele encoding: `AB`, `TOP`, `FORWARD`, `DESIGN`, or `PLUS`. |
 | `--out` | required for single-fileset mode | Output PLINK 2 prefix. |

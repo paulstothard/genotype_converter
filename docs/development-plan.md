@@ -90,7 +90,7 @@ Stage 1 is implemented for existing lookup files:
 - discover source-folder contents without running build
 - build and import source folders with one reference per species/assembly folder
 
-Stage 2 has explicit-context database conversion:
+Stage 2 has database conversion:
 
 - `genotype-converter convert` can use `--database` instead of `--lookup` for
   single CSV files and CSV folders
@@ -98,9 +98,13 @@ Stage 2 has explicit-context database conversion:
   for single PLINK 1 filesets and PLINK 1 folders
 - `genotype-converter convert-pfile` can use `--database` instead of `--lookup`
   for single PLINK 2 filesets and PLINK 2 folders
-- `--species`, `--assembly`, and `--manifest-name` are required in database mode
+- `--species` and `--assembly` are required in database mode
+- `--manifest-name` can be supplied explicitly, or omitted to use conservative
+  marker-count manifest inference
 
-Manifest inference from neighboring markers is not implemented.
+Current inference uses all input marker IDs and chooses the imported manifest
+with the most matches. It fails on no-match and tied-best cases. More nuanced
+neighbor-window inference from input marker order remains planned.
 
 ### Duplicate Marker Names
 
@@ -246,7 +250,7 @@ Batch conversion does:
 Batch conversion still needs to:
 
 - report missing, ambiguous, and unconverted markers per file
-- support automatic manifest inference for database mode
+- support neighbor-window manifest inference for database mode
 
 ### Database Test Fixture
 

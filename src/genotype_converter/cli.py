@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 from pathlib import Path
 
 import click
@@ -14,12 +15,14 @@ from .convert_plink import (
 )
 from .database import (
     discover_source_folders,
+    infer_lookup_source_for_markers,
     import_lookup,
     init_database,
     list_assemblies,
     list_manifests,
     list_species,
     load_lookup_table_from_database,
+    load_lookup_table_from_database_source,
     query_marker,
     rows_to_csv,
     rows_to_json,
@@ -49,6 +52,21 @@ def _echo_csv_batch_summary(stats, outdir) -> None:
     for output_path in stats.output_paths:
         click.echo(f"Wrote {output_path}")
     click.echo(f"Batch summary: {stats.summary_path}")
+
+
+def _echo_csv_single_summary(stats, output_path: str) -> None:
+    click.echo(
+        f"Converted genotypes written to {output_path}: "
+        f"{stats.genotypes_changed}/{stats.genotype_cells_total} genotype cells changed, "
+        f"{stats.alleles_changed} allele labels changed."
+    )
+    if stats.missing_or_unparsed_genotypes:
+        click.echo(
+            "Missing or unparsed genotype cells left unchanged: "
+            f"{stats.missing_or_unparsed_genotypes}"
+        )
+    if stats.unknown_alleles:
+        click.echo(f"Unknown allele labels left unchanged: {stats.unknown_alleles}")
 
 
 def _echo_plink_single_summary(stats, label: str) -> None:
@@ -91,7 +109,15 @@ def _manifest_name_from_path(path: str) -> str:
     return Path(path).stem.replace(".", "_")
 
 
-def _load_conversion_table(lookup, database, species, assembly, manifest_name, context: str):
+def _load_conversion_table(
+    lookup,
+    database,
+    species,
+    assembly,
+    manifest_name,
+    context: str,
+    marker_names: list[str] | None = None,
+):
     _require_one_input(lookup, database, "--lookup", "--database")
     if lookup:
         return load_lookup_table(lookup)
@@ -99,7 +125,6 @@ def _load_conversion_table(lookup, database, species, assembly, manifest_name, c
         flag for flag, value in [
             ("--species", species),
             ("--assembly", assembly),
-            ("--manifest-name", manifest_name),
         ] if not value
     ]
     if missing:
@@ -107,6 +132,27 @@ def _load_conversion_table(lookup, database, species, assembly, manifest_name, c
             f"{', '.join(missing)} required with --database for {context} conversion."
         )
     try:
+        if not manifest_name:
+            if marker_names is None:
+                raise click.UsageError(
+                    f"--manifest-name is required with --database for {context} conversion "
+                    "unless input marker names are available for manifest inference."
+                )
+            inferred = infer_lookup_source_for_markers(
+                database_path=database,
+                species=species,
+                assembly=assembly,
+                marker_names=marker_names,
+            )
+            click.echo(
+                "Inferred manifest "
+                f"{inferred.manifest_name!r} from "
+                f"{inferred.markers_matched}/{inferred.markers_requested} input marker(s)."
+            )
+            return load_lookup_table_from_database_source(
+                database_path=database,
+                source_id=inferred.source_id,
+            )
         return load_lookup_table_from_database(
             database_path=database,
             species=species,
@@ -115,6 +161,125 @@ def _load_conversion_table(lookup, database, species, assembly, manifest_name, c
         )
     except ValueError as exc:
         raise click.ClickException(str(exc)) from exc
+
+
+def _csv_input_paths(genotypes, genotypes_dir, pattern) -> list[Path]:
+    if genotypes:
+        return [Path(genotypes)]
+    source_dir = Path(genotypes_dir)
+    paths = sorted(path for path in source_dir.glob(pattern) if path.is_file())
+    if not paths:
+        raise click.ClickException(
+            f"No genotype files matched pattern {pattern!r} in {genotypes_dir}"
+        )
+    return paths
+
+
+def _csv_marker_names(paths: list[Path], layout: str, sample_col: str, marker_col: str) -> list[str]:
+    markers: list[str] = []
+    for path in paths:
+        with path.open(newline="") as handle:
+            lines = [line for line in handle if not line.startswith("#")]
+        reader = csv.DictReader(lines)
+        if reader.fieldnames is None:
+            raise click.ClickException(f"Input file has no header row: {path}")
+        if layout.lower() == "wide":
+            markers.extend(col for col in reader.fieldnames if col != sample_col)
+        elif layout.lower() == "long":
+            if marker_col not in reader.fieldnames:
+                raise click.ClickException(
+                    f"{path} is missing marker column {marker_col!r}"
+                )
+            markers.extend(row.get(marker_col, "") for row in reader)
+        else:
+            raise click.ClickException(f"Unsupported genotype layout: {layout}")
+    return [marker for marker in dict.fromkeys(markers) if marker]
+
+
+def _plink_bfile_input_prefixes(bfile, bfile_dir, pattern) -> list[Path]:
+    if bfile:
+        return [Path(bfile)]
+    paths = sorted(path for path in Path(bfile_dir).glob(pattern) if path.is_file())
+    prefixes = [path.with_suffix("") for path in paths if path.suffix == ".bed"]
+    if not prefixes:
+        raise click.ClickException(
+            f"No PLINK binary filesets matched pattern {pattern!r} in {bfile_dir}. "
+            "The pattern should match .bed files."
+        )
+    return prefixes
+
+
+def _plink_bfile_marker_names(prefixes: list[Path]) -> list[str]:
+    markers: list[str] = []
+    for prefix in prefixes:
+        bim = prefix.with_suffix(".bim")
+        if not bim.exists():
+            raise click.ClickException(
+                "PLINK binary conversion requires all three files: .bed, .bim, and .fam. "
+                f"Missing: {bim}"
+            )
+        with bim.open() as handle:
+            for line_number, line in enumerate(handle, start=1):
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                fields = stripped.split()
+                if len(fields) != 6:
+                    raise click.ClickException(
+                        f"{bim} line {line_number} has {len(fields)} fields; expected 6"
+                    )
+                markers.append(fields[1])
+    return [marker for marker in dict.fromkeys(markers) if marker]
+
+
+def _plink_pfile_input_prefixes(pfile, pfile_dir, pattern) -> list[Path]:
+    if pfile:
+        return [Path(pfile)]
+    paths = sorted(path for path in Path(pfile_dir).glob(pattern) if path.is_file())
+    prefixes = [path.with_suffix("") for path in paths if path.suffix == ".pgen"]
+    if not prefixes:
+        raise click.ClickException(
+            f"No PLINK 2 filesets matched pattern {pattern!r} in {pfile_dir}. "
+            "The pattern should match .pgen files."
+        )
+    return prefixes
+
+
+def _plink_pfile_marker_names(prefixes: list[Path]) -> list[str]:
+    markers: list[str] = []
+    for prefix in prefixes:
+        pvar = prefix.with_suffix(".pvar")
+        if not pvar.exists():
+            raise click.ClickException(
+                "PLINK 2 conversion requires all three files: .pgen, .pvar, and .psam. "
+                f"Missing: {pvar}"
+            )
+        indexes = None
+        with pvar.open() as handle:
+            for line_number, line in enumerate(handle, start=1):
+                stripped = line.strip()
+                if not stripped or stripped.startswith("##"):
+                    continue
+                if stripped.startswith("#CHROM"):
+                    header = stripped.split()
+                    normalized = ["CHROM" if col == "#CHROM" else col for col in header]
+                    if "ID" not in normalized:
+                        raise click.ClickException(
+                            f"{pvar} #CHROM header is missing ID column"
+                        )
+                    indexes = {"ID": normalized.index("ID")}
+                    continue
+                if indexes is None:
+                    raise click.ClickException(
+                        f"{pvar} line {line_number} appears before a #CHROM header."
+                    )
+                fields = stripped.split()
+                if len(fields) <= indexes["ID"]:
+                    raise click.ClickException(
+                        f"{pvar} line {line_number} has too few fields for ID column"
+                    )
+                markers.append(fields[indexes["ID"]])
+    return [marker for marker in dict.fromkeys(markers) if marker]
 
 
 @main.command("build")
@@ -396,7 +561,7 @@ def db_discover_sources_cmd(source_root, output_format):
 @click.option("--assembly", required=False,
               help="Reference assembly name for --database CSV conversion")
 @click.option("--manifest-name", required=False,
-              help="Manifest name for --database CSV conversion")
+              help="Manifest name for --database CSV conversion; inferred from input markers if omitted")
 @click.option("--from-format", "from_fmt", required=True,
               type=click.Choice(["AB", "TOP", "FORWARD", "DESIGN", "PLUS", "VCF"],
                                 case_sensitive=False),
@@ -442,6 +607,15 @@ def convert_cmd(genotypes, genotypes_dir, pattern, lookup, database, species,
     """
     from_fmt = from_fmt.upper()
     to_fmt = to_fmt.upper()
+    _require_one_input(genotypes, genotypes_dir, "--genotypes", "--genotypes-dir")
+    marker_names = None
+    if database and not manifest_name:
+        marker_names = _csv_marker_names(
+            _csv_input_paths(genotypes, genotypes_dir, pattern),
+            layout=layout,
+            sample_col=sample_col,
+            marker_col=marker_col,
+        )
     table = _load_conversion_table(
         lookup=lookup,
         database=database,
@@ -449,9 +623,8 @@ def convert_cmd(genotypes, genotypes_dir, pattern, lookup, database, species,
         assembly=assembly,
         manifest_name=manifest_name,
         context="CSV",
+        marker_names=marker_names,
     )
-
-    _require_one_input(genotypes, genotypes_dir, "--genotypes", "--genotypes-dir")
 
     if genotypes:
         _require_output_for_mode(output, "--output", "--genotypes")
@@ -468,11 +641,7 @@ def convert_cmd(genotypes, genotypes_dir, pattern, lookup, database, species,
             marker_col=marker_col,
             genotype_col=genotype_col,
         )
-        click.echo(
-            f"Converted genotypes written to {output}: "
-            f"{stats.genotypes_changed}/{stats.genotype_cells_total} genotype cells changed, "
-            f"{stats.alleles_changed} allele labels changed."
-        )
+        _echo_csv_single_summary(stats, output)
         return
 
     _require_output_for_mode(outdir, "--outdir", "--genotypes-dir")
@@ -515,7 +684,7 @@ def convert_cmd(genotypes, genotypes_dir, pattern, lookup, database, species,
 @click.option("--assembly", required=False,
               help="Reference assembly name for --database conversion")
 @click.option("--manifest-name", required=False,
-              help="Manifest name for --database conversion")
+              help="Manifest name for --database conversion; inferred from input markers if omitted")
 @click.option("--from-format", "from_fmt", required=True,
               type=click.Choice(["AB", "TOP", "FORWARD", "DESIGN", "PLUS"],
                                 case_sensitive=False),
@@ -541,6 +710,12 @@ def convert_plink_cmd(bfile, bfile_dir, pattern, lookup, database, species,
                       outdir, suffix, overwrite, update_position,
                       require_all_markers):
     """Convert allele labels in a PLINK bed/bim/fam fileset."""
+    _require_one_input(bfile, bfile_dir, "--bfile", "--bfile-dir")
+    marker_names = None
+    if database and not manifest_name:
+        marker_names = _plink_bfile_marker_names(
+            _plink_bfile_input_prefixes(bfile, bfile_dir, pattern)
+        )
     table = _load_conversion_table(
         lookup=lookup,
         database=database,
@@ -548,8 +723,8 @@ def convert_plink_cmd(bfile, bfile_dir, pattern, lookup, database, species,
         assembly=assembly,
         manifest_name=manifest_name,
         context="PLINK",
+        marker_names=marker_names,
     )
-    _require_one_input(bfile, bfile_dir, "--bfile", "--bfile-dir")
 
     if bfile:
         _require_output_for_mode(output_prefix, "--out", "--bfile")
@@ -600,7 +775,7 @@ def convert_plink_cmd(bfile, bfile_dir, pattern, lookup, database, species,
 @click.option("--assembly", required=False,
               help="Reference assembly name for --database conversion")
 @click.option("--manifest-name", required=False,
-              help="Manifest name for --database conversion")
+              help="Manifest name for --database conversion; inferred from input markers if omitted")
 @click.option("--from-format", "from_fmt", required=True,
               type=click.Choice(["AB", "TOP", "FORWARD", "DESIGN", "PLUS"],
                                 case_sensitive=False),
@@ -626,6 +801,12 @@ def convert_pfile_cmd(pfile, pfile_dir, pattern, lookup, database, species,
                       outdir, suffix, overwrite, update_position,
                       require_all_markers):
     """Convert allele labels in a PLINK 2 pgen/pvar/psam fileset."""
+    _require_one_input(pfile, pfile_dir, "--pfile", "--pfile-dir")
+    marker_names = None
+    if database and not manifest_name:
+        marker_names = _plink_pfile_marker_names(
+            _plink_pfile_input_prefixes(pfile, pfile_dir, pattern)
+        )
     table = _load_conversion_table(
         lookup=lookup,
         database=database,
@@ -633,8 +814,8 @@ def convert_pfile_cmd(pfile, pfile_dir, pattern, lookup, database, species,
         assembly=assembly,
         manifest_name=manifest_name,
         context="PLINK 2",
+        marker_names=marker_names,
     )
-    _require_one_input(pfile, pfile_dir, "--pfile", "--pfile-dir")
 
     if pfile:
         _require_output_for_mode(output_prefix, "--out", "--pfile")

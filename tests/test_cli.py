@@ -54,6 +54,19 @@ def _write_pfile(prefix, pvar_lines):
     prefix.with_suffix(".pvar").write_text("".join(line + "\n" for line in pvar_lines))
 
 
+def _write_lookup_subset(source, dest, marker_names):
+    with source.open(newline="") as handle:
+        lines = [line for line in handle if not line.startswith("#")]
+    reader = csv.DictReader(lines)
+    assert reader.fieldnames is not None
+    with dest.open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=reader.fieldnames)
+        writer.writeheader()
+        for row in reader:
+            if row["marker_name"] in marker_names:
+                writer.writerow(row)
+
+
 def test_convert_command_accepts_genotypes_dir(pipeline_output, tmp_path):
     input_dir = tmp_path / "genotypes"
     input_dir.mkdir()
@@ -87,6 +100,35 @@ def test_convert_command_accepts_genotypes_dir(pipeline_output, tmp_path):
     assert rows[0]["SNP2"] == "T/G"
     summary_rows = list(csv.DictReader((out_dir / "conversion_summary.csv").read_text().splitlines()))
     assert summary_rows[0]["genotypes_changed"] == "1"
+
+
+def test_convert_command_reports_single_file_unknown_alleles(pipeline_output, tmp_path):
+    input_csv = tmp_path / "genotypes.csv"
+    output_csv = tmp_path / "converted.csv"
+    input_csv.write_text("sample_id,SNP2\nS1,Z/C\n")
+    runner = CliRunner()
+
+    result = runner.invoke(
+        main,
+        [
+            "convert",
+            "--genotypes",
+            str(input_csv),
+            "--lookup",
+            str(pipeline_output / "manifest.reference.lookup.csv"),
+            "--from-format",
+            "TOP",
+            "--to-format",
+            "PLUS",
+            "--output",
+            str(output_csv),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Unknown allele labels left unchanged: 1" in result.output
+    rows = list(csv.DictReader(output_csv.read_text().splitlines()))
+    assert rows[0]["SNP2"] == "Z/G"
 
 
 def test_convert_command_accepts_database_for_single_csv(pipeline_output, tmp_path):
@@ -201,7 +243,7 @@ def test_convert_command_accepts_database_for_batch_csv(pipeline_output, tmp_pat
     assert (out_dir / "conversion_summary.csv").is_file()
 
 
-def test_convert_database_requires_manifest_name(pipeline_output, tmp_path):
+def test_convert_database_without_manifest_name_reports_failed_inference(tmp_path):
     db_path = tmp_path / "conversion.sqlite"
     input_csv = tmp_path / "genotypes.csv"
     output_csv = tmp_path / "converted.csv"
@@ -232,7 +274,66 @@ def test_convert_database_requires_manifest_name(pipeline_output, tmp_path):
     )
 
     assert result.exit_code != 0
-    assert "--manifest-name" in result.output
+    assert "Could not infer a manifest" in result.output
+
+
+def test_convert_database_infers_manifest_from_csv_markers(pipeline_output, tmp_path):
+    db_path = tmp_path / "conversion.sqlite"
+    lookup = pipeline_output / "manifest.reference.lookup.csv"
+    small_lookup = tmp_path / "small.lookup.csv"
+    large_lookup = tmp_path / "large.lookup.csv"
+    _write_lookup_subset(lookup, small_lookup, {"SNP1", "SNP2"})
+    _write_lookup_subset(lookup, large_lookup, {"SNP1", "SNP2", "SNP3"})
+    input_csv = tmp_path / "genotypes.csv"
+    output_csv = tmp_path / "converted.csv"
+    input_csv.write_text("sample_id,SNP1,SNP2,SNP3\nS1,A/G,A/C,A/C\n")
+    runner = CliRunner()
+
+    for manifest_name, path in [("small_panel", small_lookup), ("large_panel", large_lookup)]:
+        import_result = runner.invoke(
+            main,
+            [
+                "db",
+                "import-lookup",
+                "--database",
+                str(db_path),
+                "--lookup",
+                str(path),
+                "--species",
+                "bos_taurus",
+                "--assembly",
+                "ARS_UCD_v2_0",
+                "--manifest-name",
+                manifest_name,
+            ],
+        )
+        assert import_result.exit_code == 0, import_result.output
+
+    result = runner.invoke(
+        main,
+        [
+            "convert",
+            "--genotypes",
+            str(input_csv),
+            "--database",
+            str(db_path),
+            "--species",
+            "bos_taurus",
+            "--assembly",
+            "ARS_UCD_v2_0",
+            "--from-format",
+            "TOP",
+            "--to-format",
+            "PLUS",
+            "--output",
+            str(output_csv),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Inferred manifest 'large_panel'" in result.output
+    rows = list(csv.DictReader(output_csv.read_text().splitlines()))
+    assert rows[0]["SNP2"] == "T/G"
 
 
 def test_convert_rejects_lookup_and_database_together(pipeline_output, tmp_path):
@@ -704,7 +805,7 @@ def test_convert_pfile_command_accepts_database_for_single_pfile(pipeline_output
     ]
 
 
-def test_convert_plink_database_requires_manifest_name(tmp_path):
+def test_convert_plink_database_without_manifest_name_reports_failed_inference(tmp_path):
     db_path = tmp_path / "conversion.sqlite"
     input_prefix = tmp_path / "plink" / "herd"
     input_prefix.parent.mkdir()
@@ -739,4 +840,141 @@ def test_convert_plink_database_requires_manifest_name(tmp_path):
     )
 
     assert result.exit_code != 0
-    assert "--manifest-name" in result.output
+    assert "Could not infer a manifest" in result.output
+
+
+def test_convert_plink_database_infers_manifest_from_bim_markers(
+    pipeline_output, tmp_path
+):
+    db_path = tmp_path / "conversion.sqlite"
+    lookup = pipeline_output / "manifest.reference.lookup.csv"
+    small_lookup = tmp_path / "small.lookup.csv"
+    large_lookup = tmp_path / "large.lookup.csv"
+    _write_lookup_subset(lookup, small_lookup, {"SNP1", "SNP2"})
+    _write_lookup_subset(lookup, large_lookup, {"SNP1", "SNP2", "SNP3"})
+    input_prefix = tmp_path / "plink" / "herd"
+    input_prefix.parent.mkdir()
+    output_prefix = tmp_path / "converted" / "herd_plus"
+    _write_plink_files(
+        input_prefix,
+        [
+            ["1", "SNP1", "0", "300", "A", "G"],
+            ["1", "SNP2", "0", "700", "A", "C"],
+            ["1", "SNP3", "0", "900", "A", "C"],
+        ],
+    )
+    runner = CliRunner()
+
+    for manifest_name, path in [("small_panel", small_lookup), ("large_panel", large_lookup)]:
+        import_result = runner.invoke(
+            main,
+            [
+                "db",
+                "import-lookup",
+                "--database",
+                str(db_path),
+                "--lookup",
+                str(path),
+                "--species",
+                "bos_taurus",
+                "--assembly",
+                "ARS_UCD_v2_0",
+                "--manifest-name",
+                manifest_name,
+            ],
+        )
+        assert import_result.exit_code == 0, import_result.output
+
+    result = runner.invoke(
+        main,
+        [
+            "convert-plink",
+            "--bfile",
+            str(input_prefix),
+            "--database",
+            str(db_path),
+            "--species",
+            "bos_taurus",
+            "--assembly",
+            "ARS_UCD_v2_0",
+            "--from-format",
+            "TOP",
+            "--to-format",
+            "PLUS",
+            "--out",
+            str(output_prefix),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Inferred manifest 'large_panel'" in result.output
+    assert "SNP2\t0\t700\tT\tG" in output_prefix.with_suffix(".bim").read_text()
+
+
+def test_convert_pfile_database_infers_manifest_from_pvar_markers(
+    pipeline_output, tmp_path
+):
+    db_path = tmp_path / "conversion.sqlite"
+    lookup = pipeline_output / "manifest.reference.lookup.csv"
+    small_lookup = tmp_path / "small.lookup.csv"
+    large_lookup = tmp_path / "large.lookup.csv"
+    _write_lookup_subset(lookup, small_lookup, {"SNP1", "SNP2"})
+    _write_lookup_subset(lookup, large_lookup, {"SNP1", "SNP2", "SNP3"})
+    input_prefix = tmp_path / "pfiles" / "herd"
+    input_prefix.parent.mkdir()
+    output_prefix = tmp_path / "converted" / "herd_plus"
+    _write_pfile(
+        input_prefix,
+        [
+            "#CHROM\tPOS\tID\tREF\tALT",
+            "1\t300\tSNP1\tA\tG",
+            "1\t700\tSNP2\tA\tC",
+            "1\t900\tSNP3\tA\tC",
+        ],
+    )
+    runner = CliRunner()
+
+    for manifest_name, path in [("small_panel", small_lookup), ("large_panel", large_lookup)]:
+        import_result = runner.invoke(
+            main,
+            [
+                "db",
+                "import-lookup",
+                "--database",
+                str(db_path),
+                "--lookup",
+                str(path),
+                "--species",
+                "bos_taurus",
+                "--assembly",
+                "ARS_UCD_v2_0",
+                "--manifest-name",
+                manifest_name,
+            ],
+        )
+        assert import_result.exit_code == 0, import_result.output
+
+    result = runner.invoke(
+        main,
+        [
+            "convert-pfile",
+            "--pfile",
+            str(input_prefix),
+            "--database",
+            str(db_path),
+            "--species",
+            "bos_taurus",
+            "--assembly",
+            "ARS_UCD_v2_0",
+            "--from-format",
+            "TOP",
+            "--to-format",
+            "PLUS",
+            "--out",
+            str(output_prefix),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Inferred manifest 'large_panel'" in result.output
+    assert "1\t700\tSNP2\tT\tG" in output_prefix.with_suffix(".pvar").read_text()

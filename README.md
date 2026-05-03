@@ -354,6 +354,12 @@ genotype-converter convert-pfile \
   --outdir converted_pfiles/
 ```
 
+If `--manifest-name` is omitted, the converter infers the manifest from the
+input marker IDs by choosing the imported source that matches the most markers
+for the requested species and assembly. It fails instead of guessing if no
+source matches or if two sources tie. Use `--manifest-name` when you know the
+panel or when inference reports ambiguity.
+
 To inspect a proposed source folder without running a build:
 
 ```bash

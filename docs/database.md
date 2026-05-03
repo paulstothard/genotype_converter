@@ -148,9 +148,24 @@ genotype-converter convert-pfile \
   --outdir converted_pfiles
 ```
 
-For now, `--manifest-name` is required. This avoids guessing when the same
-marker name appears in more than one manifest. Manifest inference from
-neighboring markers is planned but not implemented.
+If `--manifest-name` is omitted, the converter tries to infer the manifest from
+the input marker IDs. It counts which imported lookup source for the requested
+species and assembly matches the most input markers. Inference is conservative:
+the command fails if no imported source matches or if two sources tie for the
+best match. In those cases, rerun with an explicit `--manifest-name`.
+
+Example inferred conversion:
+
+```bash
+genotype-converter convert \
+  --genotypes mydata.csv \
+  --database genotype_converter.sqlite \
+  --species bos_taurus \
+  --assembly ARS_UCD_v2_0 \
+  --from-format TOP \
+  --to-format PLUS \
+  --output converted.csv
+```
 
 ## Source Folder Discovery
 

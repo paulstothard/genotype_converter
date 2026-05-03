@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import sqlite3
 from pathlib import Path
 
@@ -7,6 +8,7 @@ import pytest
 
 from genotype_converter.database import (
     discover_source_folders,
+    infer_lookup_source_for_markers,
     import_lookup,
     init_database,
     list_assemblies,
@@ -15,6 +17,19 @@ from genotype_converter.database import (
     load_lookup_table_from_database,
     query_marker,
 )
+
+
+def _write_lookup_subset(source: Path, dest: Path, marker_names: set[str]) -> None:
+    with source.open(newline="") as handle:
+        lines = [line for line in handle if not line.startswith("#")]
+    reader = csv.DictReader(lines)
+    assert reader.fieldnames is not None
+    with dest.open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=reader.fieldnames)
+        writer.writeheader()
+        for row in reader:
+            if row["marker_name"] in marker_names:
+                writer.writerow(row)
 
 
 def test_import_lookup_tracks_context_and_queries_markers(pipeline_output, tmp_path):
@@ -94,6 +109,71 @@ def test_same_marker_name_can_exist_in_multiple_manifests(pipeline_output, tmp_p
     )
     assert len(filtered) == 1
     assert filtered[0]["manifest_name"] == "manifest_b"
+
+
+def test_infer_lookup_source_prefers_manifest_with_most_input_markers(
+    pipeline_output, tmp_path
+):
+    db_path = tmp_path / "conversion.sqlite"
+    lookup = pipeline_output / "manifest.reference.lookup.csv"
+    small_lookup = tmp_path / "small.lookup.csv"
+    large_lookup = tmp_path / "large.lookup.csv"
+    _write_lookup_subset(lookup, small_lookup, {"SNP1", "SNP2"})
+    _write_lookup_subset(lookup, large_lookup, {"SNP1", "SNP2", "SNP3", "INDEL1"})
+
+    import_lookup(
+        database_path=str(db_path),
+        lookup_path=str(small_lookup),
+        species="bos_taurus",
+        assembly="ARS_UCD_v2_0",
+        manifest_name="small_panel",
+    )
+    import_lookup(
+        database_path=str(db_path),
+        lookup_path=str(large_lookup),
+        species="bos_taurus",
+        assembly="ARS_UCD_v2_0",
+        manifest_name="large_panel",
+    )
+
+    inferred = infer_lookup_source_for_markers(
+        database_path=str(db_path),
+        species="bos_taurus",
+        assembly="ARS_UCD_v2_0",
+        marker_names=["SNP1", "SNP2", "SNP3"],
+    )
+
+    assert inferred.manifest_name == "large_panel"
+    assert inferred.markers_matched == 3
+    assert inferred.markers_requested == 3
+
+
+def test_infer_lookup_source_rejects_tied_manifest_matches(pipeline_output, tmp_path):
+    db_path = tmp_path / "conversion.sqlite"
+    lookup = pipeline_output / "manifest.reference.lookup.csv"
+
+    import_lookup(
+        database_path=str(db_path),
+        lookup_path=str(lookup),
+        species="bos_taurus",
+        assembly="ARS_UCD_v2_0",
+        manifest_name="manifest_a",
+    )
+    import_lookup(
+        database_path=str(db_path),
+        lookup_path=str(lookup),
+        species="bos_taurus",
+        assembly="ARS_UCD_v2_0",
+        manifest_name="manifest_b",
+    )
+
+    with pytest.raises(ValueError, match="Could not infer a unique manifest"):
+        infer_lookup_source_for_markers(
+            database_path=str(db_path),
+            species="bos_taurus",
+            assembly="ARS_UCD_v2_0",
+            marker_names=["SNP1", "SNP2"],
+        )
 
 
 def test_load_lookup_table_from_database_matches_converter_shape(pipeline_output, tmp_path):
