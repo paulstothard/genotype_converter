@@ -16,14 +16,17 @@ def test_batch_options_are_shown_in_help():
         "convert": [
             "--genotypes-dir", "--outdir", "--suffix", "--overwrite",
             "--resolve-mixed-manifests", "--on-ambiguous-marker",
+            "--on-unconvertible-marker",
         ],
         "convert-plink": [
             "--bfile-dir", "--outdir", "--suffix", "--overwrite",
             "--resolve-mixed-manifests", "--on-ambiguous-marker",
+            "--on-unconvertible-marker", "--plink",
         ],
         "convert-pfile": [
             "--pfile-dir", "--outdir", "--suffix", "--overwrite",
             "--resolve-mixed-manifests", "--on-ambiguous-marker",
+            "--on-unconvertible-marker", "--plink2",
         ],
     }
 
@@ -140,6 +143,8 @@ def test_convert_command_reports_single_file_unknown_alleles(pipeline_output, tm
             "TOP",
             "--to-format",
             "PLUS",
+            "--on-unconvertible-marker",
+            "keep",
             "--output",
             str(output_csv),
         ],
@@ -149,6 +154,35 @@ def test_convert_command_reports_single_file_unknown_alleles(pipeline_output, tm
     assert "Unknown allele labels left unchanged: 1" in result.output
     rows = list(csv.DictReader(output_csv.read_text().splitlines()))
     assert rows[0]["SNP2"] == "Z/G"
+
+
+def test_convert_command_excludes_unknown_alleles_by_default(pipeline_output, tmp_path):
+    input_csv = tmp_path / "genotypes.csv"
+    output_csv = tmp_path / "converted.csv"
+    input_csv.write_text("sample_id,SNP2\nS1,Z/C\n")
+    runner = CliRunner()
+
+    result = runner.invoke(
+        main,
+        [
+            "convert",
+            "--genotypes",
+            str(input_csv),
+            "--lookup",
+            str(pipeline_output / "manifest.reference.lookup.csv"),
+            "--from-format",
+            "TOP",
+            "--to-format",
+            "PLUS",
+            "--output",
+            str(output_csv),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Markers excluded from output: 1" in result.output
+    rows = list(csv.DictReader(output_csv.read_text().splitlines()))
+    assert list(rows[0]) == ["sample_id"]
 
 
 def test_convert_command_accepts_database_for_single_csv(pipeline_output, tmp_path):

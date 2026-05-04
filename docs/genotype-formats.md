@@ -22,13 +22,13 @@ whereas plus/minus is the genomic reference-strand convention.
 
 | Command | Input | Output | What Changes |
 |---|---|---|---|
-| `convert --layout wide` | CSV, one sample per row and one marker per column | CSV | Genotype cells are rewritten. Single files and folders are supported. |
-| `convert --layout long` | CSV, one sample-marker genotype per row | CSV | The genotype column is rewritten. Single files and folders are supported. |
-| `convert --layout illumina-matrix` | Illumina GenomeStudio/GSGT matrix report | Illumina/GSGT matrix report | Matrix genotype calls are rewritten. |
-| `convert --layout illumina-long` | Illumina GenomeStudio/GSGT long report | Illumina/GSGT long report | Target allele columns are filled or rewritten. |
-| `convert --layout affymetrix-matrix` | Affymetrix/Axiom paired-call matrix | Affymetrix/Axiom paired-call matrix | The AB or native nucleotide call in each sample pair is rewritten. |
-| `convert-plink` | PLINK 1 binary fileset: `.bed`, `.bim`, `.fam` | PLINK 1 binary fileset | Allele labels in `.bim` are rewritten; `.bed` and `.fam` are copied unchanged. Single filesets and folders are supported. |
-| `convert-pfile` | PLINK 2 fileset: `.pgen`, `.pvar`, `.psam` | PLINK 2 fileset | Biallelic allele labels in `.pvar` are rewritten; `.pgen` and `.psam` are copied unchanged. Single filesets and folders are supported. |
+| `convert --layout wide` | CSV, one sample per row and one marker per column | CSV | Genotype cells are rewritten. Unconvertible marker columns are excluded by default. Single files and folders are supported. |
+| `convert --layout long` | CSV, one sample-marker genotype per row | CSV | The genotype column is rewritten. Unconvertible marker rows are excluded by default. Single files and folders are supported. |
+| `convert --layout illumina-matrix` | Illumina GenomeStudio/GSGT matrix report | Illumina/GSGT matrix report | Matrix genotype calls are rewritten. Unconvertible marker rows are excluded by default. |
+| `convert --layout illumina-long` | Illumina GenomeStudio/GSGT long report | Illumina/GSGT long report | Target allele columns are filled or rewritten. Unconvertible marker rows are excluded by default. |
+| `convert --layout affymetrix-matrix` | Affymetrix/Axiom paired-call matrix | Affymetrix/Axiom paired-call matrix | The AB or native nucleotide call in each sample pair is rewritten. Unconvertible marker rows are excluded by default. |
+| `convert-plink` | PLINK 1 binary fileset: `.bed`, `.bim`, `.fam` | PLINK 1 binary fileset | Allele labels in `.bim` are rewritten. Unconvertible variants are excluded with PLINK by default so `.bed/.bim/.fam` stay synchronized. Single filesets and folders are supported. |
+| `convert-pfile` | PLINK 2 fileset: `.pgen`, `.pvar`, `.psam` | PLINK 2 fileset | Biallelic allele labels in `.pvar` are rewritten. Unconvertible variants are excluded with PLINK2 by default so `.pgen/.pvar/.psam` stay synchronized. Single filesets and folders are supported. |
 
 PLINK text formats such as `.ped/.map` are not converted directly. Convert them
 to PLINK binary with PLINK first, then use `convert-plink` or `convert-pfile`.
@@ -80,6 +80,15 @@ Options:
 | `--in-sep` | auto | Allele separator in input. Auto-detects `/`, space, tab, or adjacent single-character alleles. |
 | `--out-sep` | `/` | Allele separator in output. |
 | `--sample-col` | `sample_id` | Column name identifying the sample. |
+| `--on-unconvertible-marker` | `exclude` | How to handle markers that are missing from the lookup table or lack target allele labels: `exclude`, `fail`, or `keep`. |
+
+With the default `exclude` policy, unconvertible markers are removed from text
+outputs before conversion: wide CSV marker columns are removed, long CSV marker
+rows are removed, and Illumina/Affymetrix marker rows are removed. The command
+writes `<output>.marker_conversion_report.csv` and, when markers are excluded,
+`<output>.exclude_markers.txt`. Use `--on-unconvertible-marker fail` for strict
+audits, or `--on-unconvertible-marker keep` to preserve the original file shape
+and leave unresolved allele values unchanged.
 
 Batch example:
 
@@ -136,12 +145,18 @@ The CSV batch summary includes:
 | `genotypes_parsed` | Genotypes recognized as two allele labels. |
 | `genotypes_changed` | Genotype cells whose output value differs from input. |
 | `missing_or_unparsed_genotypes` | Missing or unrecognized genotype cells left unchanged. |
+| `genotypes_excluded` | Genotype cells or long-format rows removed because their marker was excluded. |
 | `alleles_changed` | Individual allele labels changed. |
-| `unknown_alleles` | Allele labels not found for that marker and input encoding. |
+| `unknown_alleles` | Allele labels left unchanged in `keep` mode because no complete conversion rule was available. |
+| `markers_missing_lookup` | Distinct marker IDs not found in the lookup table. |
+| `markers_incomplete_mapping` | Distinct marker IDs found in the lookup table but not fully convertible to the target format. |
+| `markers_excluded` | Distinct marker IDs removed from the output. |
+| `marker_report_path` | CSV report listing unconvertible markers and reasons. |
+| `exclude_marker_path` | Marker ID list used when markers were excluded. |
 
 For single-file CSV conversion, the command-line summary also reports missing
-or unparsed genotype cells and unknown allele labels when those counts are
-non-zero.
+or unparsed genotype cells, unresolved allele labels, excluded markers, and
+marker-report paths when those counts are non-zero.
 
 ## CSV Long
 
@@ -281,7 +296,22 @@ Long CSV marker-column values must also match `marker_name` values. Missing
 required columns, unknown markers, unrecognized lookup files, and unrecognized
 manifests raise errors instead of producing partial output.
 
-Unknown allele values for a known marker are currently passed through unchanged.
+For `convert` text layouts, marker lookup problems and allele conversion
+problems are handled separately. The table below uses the same terms as the
+PLINK tables later in this document.
+
+| Problem type | Exact condition | Output action | Accounting/reporting |
+|---|---|---|---|
+| Marker lookup missing | A wide marker column, long `marker_name`, or report marker is not present in the lookup table. | Exclude the marker from the output. | `markers_missing_lookup` and `markers_excluded` increment once per marker. Marker report row has `reason=missing_lookup` and `action=exclude`. |
+| Source allele missing from rule | Marker ID is present, but a genotype allele is not listed in that marker's `--from-format` rule. | Exclude the marker from the output. | `markers_incomplete_mapping` and `markers_excluded` increment once per marker. Marker report row has `reason=input_allele_not_in_<FORMAT>` and `action=exclude`. |
+| Target allele missing from rule | Marker ID is present and the input allele is recognized, but the requested `--to-format` allele is blank. | Exclude the marker from the output. | `markers_incomplete_mapping` and `markers_excluded` increment once per marker. Marker report row has `reason=missing_<FORMAT>_allele` and `action=exclude`. |
+| Genotype missing or unparsed | Genotype is a supported missing code, contains a missing allele, or cannot be parsed as two alleles. | Keep the full genotype cell unchanged. | `missing_or_unparsed_genotypes` increments once per genotype cell. |
+
+This policy applies to `wide`, `long`, `illumina-matrix`, `illumina-long`, and
+`affymetrix-matrix` layouts. In `keep` mode, text outputs keep the same
+row/column shape and unresolved allele values increment `unknown_alleles`
+instead of excluding the marker. In `fail` mode, any marker lookup or
+allele-rule problem stops the conversion after writing the marker report.
 
 ## PLINK 1 Binary: `.bed/.bim/.fam`
 
@@ -301,8 +331,10 @@ mydata_plus.bim
 mydata_plus.fam
 ```
 
-The genotype bit matrix in `.bed` is not unpacked or rewritten. The `.fam` file
-is copied unchanged. Only allele columns 5 and 6 in `.bim` are rewritten.
+When all variants are convertible, the genotype bit matrix in `.bed` is copied
+unchanged. If any variants are unconvertible under the default policy, PLINK is
+used to remove them before allele columns 5 and 6 in `.bim` are rewritten. The
+`.fam` file is copied unchanged.
 
 Example `.bim` input in TOP encoding:
 
@@ -351,7 +383,26 @@ Options:
 | `--suffix` | `.converted` | Filename suffix for batch output prefixes. |
 | `--overwrite` | off | Allow batch mode to replace existing outputs. |
 | `--update-position` / `--keep-position` | keep | Also replace `.bim` chromosome and base-pair columns from the lookup table. |
-| `--require-all-markers` / `--allow-missing-markers` | require | Fail if any `.bim` marker is absent from the lookup table. |
+| `--on-unconvertible-marker` | `exclude` | How to handle `.bim` markers that are missing from the lookup table or lack target allele labels: `exclude`, `fail`, or `keep`. |
+| `--plink` | `plink` | PLINK executable used when unconvertible markers are excluded. |
+
+By default, unconvertible PLINK variants are removed with PLINK before allele
+labels are rewritten. This keeps `.bed`, `.bim`, and `.fam` synchronized. The
+command writes `<out>.marker_conversion_report.csv` and, when variants are
+excluded, `<out>.exclude_markers.txt`. Use `--on-unconvertible-marker fail` for
+strict audits, or `--on-unconvertible-marker keep` only when you intentionally
+want unresolved variants left unchanged.
+
+PLINK unconvertible-marker handling uses the same problem categories as text
+conversion, but the default output action is different because the genotype
+matrix has to stay synchronized with the variant list.
+
+| Problem type | Exact condition | Default `exclude` output action | Accounting/reporting |
+|---|---|---|---|
+| Marker lookup missing | The `.bim` marker ID is not present in the lookup table. | Write the marker ID to `<out>.exclude_markers.txt` and remove the variant with PLINK before writing final `.bed/.bim/.fam`. | `variants_missing_lookup` increments once per variant. Marker report row has `reason=missing_lookup` and `action=exclude`. |
+| Source allele missing from rule | Marker ID is present, but a `.bim` allele is not listed in that marker's `--from-format` rule. | Write the marker ID to `<out>.exclude_markers.txt` and remove the variant with PLINK. | `variants_incomplete_mapping` increments once per variant. Marker report row has `reason=input_allele_not_in_<FORMAT>` and `action=exclude`. |
+| Target allele missing from rule | Marker ID is present and the `.bim` allele is recognized, but the requested `--to-format` allele is blank. | Write the marker ID to `<out>.exclude_markers.txt` and remove the variant with PLINK. | `variants_incomplete_mapping` increments once per variant. Marker report row has `reason=missing_<FORMAT>_allele` and `action=exclude`. |
+| PLINK allele is missing | Allele value in `.bim` is PLINK missing allele `0`. | Keep `0` as missing. This does not by itself make the variant unconvertible. | No unconvertible-marker reason. The variant is counted normally if the remaining allele labels are convertible. |
 
 Batch example:
 
@@ -391,12 +442,16 @@ The PLINK batch summary includes:
 | `input_prefix` | Input fileset prefix. |
 | `output_prefix` | Converted fileset prefix. |
 | `variants_total` | Variant rows processed in `.bim` or `.pvar`. |
-| `variants_converted` | Variant rows with marker IDs found in the lookup table. |
+| `variants_converted` | Variant rows whose allele labels were converted or confirmed convertible. In `keep` mode, unconvertible rows may still be present in the output but are not counted here. |
 | `variants_missing_lookup` | Variant rows whose marker IDs were not found. |
+| `variants_incomplete_mapping` | Variant rows found in the lookup table but not fully convertible to the target format. |
+| `variants_excluded` | Variant rows removed from the output fileset. |
 | `alleles_changed` | Individual allele labels changed. |
 | `genotype_path` | Output `.bed` or `.pgen` path. |
 | `variant_path` | Output `.bim` or `.pvar` path. |
 | `sample_path` | Output `.fam` or `.psam` path. |
+| `marker_report_path` | CSV report listing unconvertible markers and reasons. |
+| `exclude_marker_path` | Marker ID list passed to PLINK/PLINK2 when variants were excluded. |
 
 `VCF` is not a `convert-plink` target because PLINK `.bim` allele columns should
 contain allele labels such as `A`, `C`, `I`, or `D`, not `REF` or `ALT`
@@ -420,9 +475,11 @@ mydata_plus.pvar
 mydata_plus.psam
 ```
 
-The genotype matrix in `.pgen` is not unpacked or rewritten. The `.psam` file is
-copied unchanged. Biallelic allele labels in `.pvar` are rewritten. Multiallelic
-`.pvar` rows are rejected for now because the lookup table is biallelic.
+When all variants are convertible, the genotype matrix in `.pgen` is copied
+unchanged. If any variants are unconvertible under the default policy, PLINK2 is
+used to remove them before biallelic allele labels in `.pvar` are rewritten. The
+`.psam` file is copied unchanged. Multiallelic `.pvar` rows are rejected for now
+because the lookup table is biallelic.
 
 Example `.pvar` input in TOP encoding:
 
@@ -473,7 +530,20 @@ Options:
 | `--suffix` | `.converted` | Filename suffix for batch output prefixes. |
 | `--overwrite` | off | Allow batch mode to replace existing outputs. |
 | `--update-position` / `--keep-position` | keep | Also replace `.pvar` chromosome and base-pair columns from the lookup table. |
-| `--require-all-markers` / `--allow-missing-markers` | require | Fail if any `.pvar` marker is absent from the lookup table. |
+| `--on-unconvertible-marker` | `exclude` | How to handle `.pvar` markers that are missing from the lookup table or lack target allele labels: `exclude`, `fail`, or `keep`. |
+| `--plink2` | `plink2` | PLINK2 executable used when unconvertible markers are excluded. |
+
+By default, unconvertible PLINK 2 variants are removed with PLINK2 before allele
+labels are rewritten. This keeps `.pgen`, `.pvar`, and `.psam` synchronized and
+produces the same marker report and exclude-list files described for PLINK 1.
+The same accounting is used: missing `.pvar` IDs increment
+`variants_missing_lookup`; recognized IDs with incomplete source or target
+allele rules increment `variants_incomplete_mapping`; excluded variants
+increment `variants_excluded`.
+If PLINK2 is not available on `PATH`, install it separately and pass the
+executable with `--plink2 /path/to/plink2`, or use
+`--on-unconvertible-marker fail` for a strict report without writing filtered
+p-files.
 
 Batch example:
 

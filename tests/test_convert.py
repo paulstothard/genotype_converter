@@ -52,6 +52,24 @@ def test_convert_allele_unknown_passthrough(table):
     assert _convert_allele("X", "SNP1", "TOP", "PLUS", table) == "X"
 
 
+def test_convert_allele_missing_target_value_passthrough():
+    from genotype_converter.convert_genotypes import _convert_allele, _convert_pair
+    table = {
+        "SNP_NO_PLUS": [
+            {"TOP": "A", "PLUS": ""},
+            {"TOP": "C", "PLUS": ""},
+        ]
+    }
+
+    assert _convert_allele("A", "SNP_NO_PLUS", "TOP", "PLUS", table) == "A"
+    converted, changed, unknown = _convert_pair(
+        ("A", "C"), "SNP_NO_PLUS", "TOP", "PLUS", table
+    )
+    assert converted == ("A", "C")
+    assert changed == 0
+    assert unknown == 2
+
+
 def test_convert_wide_top_to_plus(table, tmp_path):
     input_data = "sample_id,SNP1,SNP2\nS1,A/G,A/C\nS2,A/A,C/C\n"
     in_file = tmp_path / "in.csv"
@@ -102,13 +120,13 @@ def test_convert_wide_missing_passthrough(table, tmp_path):
     assert rows[1]["SNP1"] == "NA/NA"
 
 
-def test_convert_wide_ab_adjacent_to_plus(table, tmp_path):
+def test_convert_wide_excludes_unconvertible_marker_by_default(table, tmp_path):
     input_data = "sample_id,SNP1,SNP2,INDEL1\nS1,AB,AB,ID\nS2,BB,AA,DD\n"
     in_file = tmp_path / "ab_in.csv"
     in_file.write_text(input_data)
     out_file = tmp_path / "plus_out.csv"
 
-    convert_wide(
+    stats = convert_wide(
         input_path=str(in_file),
         output_path=str(out_file),
         table=table,
@@ -122,9 +140,37 @@ def test_convert_wide_ab_adjacent_to_plus(table, tmp_path):
     rows = list(csv.DictReader(out_file.read_text().splitlines()))
     assert rows[0]["SNP1"] == "A/G"
     assert rows[0]["SNP2"] == "T/G"
-    assert rows[0]["INDEL1"] == "I/D"
     assert rows[1]["SNP2"] == "T/T"
+    assert "INDEL1" not in rows[0]
+    assert stats.markers_excluded == 1
+    assert stats.genotypes_excluded == 2
+    assert stats.markers_incomplete_mapping == 1
+
+
+def test_convert_wide_can_keep_unconvertible_marker_for_audit(table, tmp_path):
+    input_data = "sample_id,SNP1,SNP2,INDEL1\nS1,AB,AB,ID\nS2,BB,AA,DD\n"
+    in_file = tmp_path / "ab_in.csv"
+    in_file.write_text(input_data)
+    out_file = tmp_path / "plus_out.csv"
+
+    stats = convert_wide(
+        input_path=str(in_file),
+        output_path=str(out_file),
+        table=table,
+        from_fmt="AB",
+        to_fmt="PLUS",
+        in_sep=None,
+        out_sep="/",
+        sample_col="sample_id",
+        on_unconvertible_marker="keep",
+    )
+
+    rows = list(csv.DictReader(out_file.read_text().splitlines()))
+    assert rows[0]["INDEL1"] == "I/D"
     assert rows[1]["INDEL1"] == "D/D"
+    assert stats.markers_excluded == 0
+    assert stats.markers_incomplete_mapping == 1
+    assert stats.unknown_alleles == 4
 
 
 def test_split_genotype_auto_detects_space_and_strips_missing():
@@ -158,6 +204,70 @@ def test_convert_long(table, tmp_path):
     assert stats.genotype_cells_total == 2
     assert stats.genotypes_changed == 2
     assert stats.alleles_changed == 4
+
+
+def test_convert_long_excludes_unconvertible_marker_and_reports(table, tmp_path):
+    input_data = (
+        "sample_id,marker_name,genotype\n"
+        "S1,SNP2,A/C\n"
+        "S2,SNP2,A/C\n"
+        "S1,NOT_IN_LOOKUP,A/G\n"
+    )
+    in_file = tmp_path / "long_in.csv"
+    in_file.write_text(input_data)
+    out_file = tmp_path / "long_out.csv"
+
+    stats = convert_long(
+        input_path=str(in_file),
+        output_path=str(out_file),
+        table=table,
+        from_fmt="TOP",
+        to_fmt="PLUS",
+        in_sep="/",
+        out_sep="/",
+        sample_col="sample_id",
+        marker_col="marker_name",
+        genotype_col="genotype",
+    )
+
+    rows = list(csv.DictReader(out_file.read_text().splitlines()))
+    assert [row["marker_name"] for row in rows] == ["SNP2", "SNP2"]
+    assert stats.markers_missing_lookup == 1
+    assert stats.markers_excluded == 1
+    assert stats.genotypes_excluded == 1
+    report_rows = list(csv.DictReader(Path(stats.marker_report_path).read_text().splitlines()))
+    assert report_rows[0]["marker_name"] == "NOT_IN_LOOKUP"
+    assert report_rows[0]["reason"] == "missing_lookup"
+    assert report_rows[0]["action"] == "exclude"
+    assert Path(stats.exclude_marker_path).read_text().strip() == "NOT_IN_LOOKUP"
+
+
+def test_convert_long_strictly_rejects_incomplete_target_mapping(tmp_path):
+    input_data = "sample_id,marker_name,genotype\nS1,SNP_NO_PLUS,A/C\n"
+    in_file = tmp_path / "long_in.csv"
+    in_file.write_text(input_data)
+    out_file = tmp_path / "long_out.csv"
+    table = {
+        "SNP_NO_PLUS": [
+            {"TOP": "A", "PLUS": ""},
+            {"TOP": "C", "PLUS": ""},
+        ]
+    }
+
+    with pytest.raises(ValueError, match="SNP_NO_PLUS"):
+        convert_long(
+            input_path=str(in_file),
+            output_path=str(out_file),
+            table=table,
+            from_fmt="TOP",
+            to_fmt="PLUS",
+            in_sep="/",
+            out_sep="/",
+            sample_col="sample_id",
+            marker_col="marker_name",
+            genotype_col="genotype",
+            on_unconvertible_marker="fail",
+        )
 
 
 def test_convert_long_vcf_output(table, tmp_path):
@@ -387,7 +497,7 @@ def test_convert_wide_requires_sample_column(table, tmp_path):
         )
 
 
-def test_convert_wide_rejects_unknown_marker(table, tmp_path):
+def test_convert_wide_strictly_rejects_unknown_marker(table, tmp_path):
     in_file = tmp_path / "in.csv"
     in_file.write_text("sample_id,SNP1,NOT_IN_LOOKUP\nS1,A/G,A/G\n")
     out_file = tmp_path / "out.csv"
@@ -402,7 +512,30 @@ def test_convert_wide_rejects_unknown_marker(table, tmp_path):
             in_sep="/",
             out_sep="/",
             sample_col="sample_id",
+            on_unconvertible_marker="fail",
         )
+
+
+def test_convert_wide_excludes_unknown_marker_by_default(table, tmp_path):
+    in_file = tmp_path / "in.csv"
+    in_file.write_text("sample_id,SNP1,NOT_IN_LOOKUP\nS1,A/G,A/G\n")
+    out_file = tmp_path / "out.csv"
+
+    stats = convert_wide(
+        input_path=str(in_file),
+        output_path=str(out_file),
+        table=table,
+        from_fmt="TOP",
+        to_fmt="PLUS",
+        in_sep="/",
+        out_sep="/",
+        sample_col="sample_id",
+    )
+
+    rows = list(csv.DictReader(out_file.read_text().splitlines()))
+    assert list(rows[0]) == ["sample_id", "SNP1"]
+    assert stats.markers_missing_lookup == 1
+    assert stats.markers_excluded == 1
 
 
 def test_convert_long_requires_marker_and_genotype_columns(table, tmp_path):

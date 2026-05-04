@@ -34,6 +34,28 @@
 - Do not change test expectations just to make a failing test pass. If expected
   output changes, explain the biological or file-format reason.
 
+## Genotype Conversion Policy
+
+- `convert`, `convert-plink`, and `convert-pfile` all use
+  `--on-unconvertible-marker exclude|fail|keep`.
+- The default is `exclude` for text formats and PLINK formats.
+- For text `convert` layouts, `exclude` removes unconvertible marker columns
+  from wide CSV and marker rows from long, Illumina, and Affymetrix-style
+  outputs. It writes `<output>.marker_conversion_report.csv` and, when markers
+  are excluded, `<output>.exclude_markers.txt`.
+- For `convert-plink`, `exclude` must use PLINK to remove variants before
+  rewriting `.bim`, so `.bed/.bim/.fam` remain synchronized. Do not manually
+  filter `.bim` without rewriting `.bed`.
+- For `convert-pfile`, `exclude` must use PLINK2 to remove variants before
+  rewriting `.pvar`, so `.pgen/.pvar/.psam` remain synchronized.
+- Missing marker IDs and incomplete allele mappings are tracked separately.
+  Text summaries use `markers_missing_lookup`, `markers_incomplete_mapping`,
+  `markers_excluded`, and `genotypes_excluded`. PLINK summaries use
+  `variants_missing_lookup`, `variants_incomplete_mapping`, and
+  `variants_excluded`.
+- `keep` is for audit/debugging runs where unresolved allele values should be
+  left unchanged. `fail` is for strict checking after writing the marker report.
+
 ## Probe-Adjacent SNP Positioning
 
 For Illumina SNP manifests, `AlleleA_ProbeSeq` and `AlleleB_ProbeSeq` describe

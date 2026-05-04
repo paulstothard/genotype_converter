@@ -16,6 +16,7 @@ TO_FORMAT="PLUS"
 RESOLVE_ARGS=()
 ON_AMBIGUOUS="fail"
 UPDATE_POSITION_ARGS=()
+ON_UNCONVERTIBLE="exclude"
 
 usage() {
   cat <<'EOF'
@@ -43,6 +44,8 @@ Options:
   --resolve-mixed-manifests Resolve database rules per marker.
   --on-ambiguous-marker MODE  fail or skip. Default: fail.
   --update-position         Update BIM chromosome/base-pair columns.
+  --on-unconvertible-marker MODE
+                          exclude, fail, or keep. Default: exclude.
   --env NAME                Conda environment. Default: genotype-converter-env
   -h, --help                Show this help.
 EOF
@@ -64,6 +67,7 @@ while [[ $# -gt 0 ]]; do
     --resolve-mixed-manifests) RESOLVE_ARGS=(--resolve-mixed-manifests); shift ;;
     --on-ambiguous-marker) ON_AMBIGUOUS="$2"; shift 2 ;;
     --update-position) UPDATE_POSITION_ARGS=(--update-position); shift ;;
+    --on-unconvertible-marker) ON_UNCONVERTIBLE="$2"; shift 2 ;;
     --env) ENV_NAME="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
@@ -101,9 +105,11 @@ conda run -n "${ENV_NAME}" genotype-converter convert-plink \
   --to-format "${TO_FORMAT}" \
   --out "${OUT_PREFIX}" \
   "${UPDATE_POSITION_ARGS[@]}" \
+  --on-unconvertible-marker "${ON_UNCONVERTIBLE}" \
   --overwrite
 
 conda run -n "${ENV_NAME}" python validation/plink_comparison/scripts/compare_plink_bim.py \
+  --original "${ORIGINAL_BFILE}.bim" \
   --expected "${EXPECTED_BFILE}.bim" \
   --actual "${OUT_PREFIX}.bim" \
   --report-prefix "${REPORT_PREFIX}"

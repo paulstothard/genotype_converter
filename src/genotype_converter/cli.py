@@ -76,6 +76,19 @@ def _echo_csv_single_summary(stats, output_path: str) -> None:
         )
     if stats.unknown_alleles:
         click.echo(f"Unknown allele labels left unchanged: {stats.unknown_alleles}")
+    if stats.markers_missing_lookup:
+        click.echo(f"Markers missing from lookup: {stats.markers_missing_lookup}")
+    if stats.markers_incomplete_mapping:
+        click.echo(f"Markers with incomplete allele mapping: {stats.markers_incomplete_mapping}")
+    if stats.markers_excluded:
+        click.echo(
+            f"Markers excluded from output: {stats.markers_excluded} "
+            f"({stats.genotypes_excluded} genotype cell/row value(s))"
+        )
+    if stats.marker_report_path:
+        click.echo(f"Marker conversion report: {stats.marker_report_path}")
+    if stats.exclude_marker_path:
+        click.echo(f"Exclude marker list: {stats.exclude_marker_path}")
 
 
 def _echo_plink_single_summary(stats, label: str) -> None:
@@ -85,6 +98,17 @@ def _echo_plink_single_summary(stats, label: str) -> None:
     )
     if stats.variants_missing_lookup:
         click.echo(f"Markers missing from lookup: {stats.variants_missing_lookup}")
+    if stats.variants_incomplete_mapping:
+        click.echo(
+            "Markers with incomplete allele mapping: "
+            f"{stats.variants_incomplete_mapping}"
+        )
+    if stats.variants_excluded:
+        click.echo(f"Markers excluded from output: {stats.variants_excluded}")
+    if stats.marker_report_path:
+        click.echo(f"Marker conversion report: {stats.marker_report_path}")
+    if stats.exclude_marker_path:
+        click.echo(f"PLINK exclude list: {stats.exclude_marker_path}")
     click.echo(f"Wrote {stats.genotype_path}")
     click.echo(f"Wrote {stats.variant_path}")
     click.echo(f"Wrote {stats.sample_path}")
@@ -96,6 +120,11 @@ def _echo_plink_batch_summary(stats, outdir, label: str) -> None:
         f"{label} filesets to {Path(outdir)}"
     )
     for item in stats.stats:
+        if item.variants_excluded:
+            click.echo(
+                f"{Path(item.genotype_path).with_suffix('')}: "
+                f"excluded {item.variants_excluded} unconvertible marker(s)"
+            )
         click.echo(f"Wrote {item.genotype_path}")
         click.echo(f"Wrote {item.variant_path}")
         click.echo(f"Wrote {item.sample_path}")
@@ -951,11 +980,14 @@ def db_vacuum_cmd(database):
               help="Column name for marker (long layout only)")
 @click.option("--genotype-col", default="genotype", show_default=True,
               help="Column name for genotype (long layout only)")
+@click.option("--on-unconvertible-marker", default="exclude", show_default=True,
+              type=click.Choice(["exclude", "fail", "keep"]),
+              help="How to handle markers missing from lookup or lacking target alleles")
 def convert_cmd(genotypes, genotypes_dir, pattern, lookup, database, species,
                 assembly, manifest_name, resolve_mixed_manifests,
                 on_ambiguous_marker, resolution_report, from_fmt, to_fmt,
                 output, outdir, suffix, overwrite, layout, in_sep, out_sep,
-                sample_col, marker_col, genotype_col):
+                sample_col, marker_col, genotype_col, on_unconvertible_marker):
     """Convert genotypes between format encodings (e.g. TOP → PLUS).
 
     Examples:
@@ -1017,6 +1049,7 @@ def convert_cmd(genotypes, genotypes_dir, pattern, lookup, database, species,
             sample_col=sample_col,
             marker_col=marker_col,
             genotype_col=genotype_col,
+            on_unconvertible_marker=on_unconvertible_marker,
         )
         _echo_csv_single_summary(stats, output)
         return
@@ -1038,6 +1071,7 @@ def convert_cmd(genotypes, genotypes_dir, pattern, lookup, database, species,
             sample_col=sample_col,
             marker_col=marker_col,
             genotype_col=genotype_col,
+            on_unconvertible_marker=on_unconvertible_marker,
         )
     except FileExistsError as exc:
         raise click.ClickException(str(exc)) from exc
@@ -1088,13 +1122,16 @@ def convert_cmd(genotypes, genotypes_dir, pattern, lookup, database, species,
               help="Allow batch conversion to replace existing output files")
 @click.option("--update-position/--keep-position", default=False, show_default=True,
               help="Also replace .bim chromosome/base-pair columns with lookup positions")
-@click.option("--require-all-markers/--allow-missing-markers", default=True, show_default=True,
-              help="Fail if any .bim marker is absent from the lookup table")
+@click.option("--on-unconvertible-marker", default="exclude", show_default=True,
+              type=click.Choice(["exclude", "fail", "keep"]),
+              help="How to handle .bim markers missing from lookup or lacking target alleles")
+@click.option("--plink", "plink_command", default="plink", show_default=True,
+              help="PLINK executable used when --on-unconvertible-marker=exclude")
 def convert_plink_cmd(bfile, bfile_dir, pattern, lookup, database, species,
                       assembly, manifest_name, resolve_mixed_manifests,
                       on_ambiguous_marker, resolution_report, from_fmt, to_fmt,
                       output_prefix, outdir, suffix, overwrite, update_position,
-                      require_all_markers):
+                      on_unconvertible_marker, plink_command):
     """Convert allele labels in a PLINK bed/bim/fam fileset."""
     _require_one_input(bfile, bfile_dir, "--bfile", "--bfile-dir")
     marker_names = None
@@ -1137,7 +1174,8 @@ def convert_plink_cmd(bfile, bfile_dir, pattern, lookup, database, species,
             from_fmt=from_fmt.upper(),
             to_fmt=to_fmt.upper(),
             update_position=update_position,
-            require_all_markers=require_all_markers,
+            on_unconvertible_marker=on_unconvertible_marker,
+            plink_command=plink_command,
         )
         _echo_plink_single_summary(stats, "PLINK fileset")
         return
@@ -1154,7 +1192,8 @@ def convert_plink_cmd(bfile, bfile_dir, pattern, lookup, database, species,
             from_fmt=from_fmt.upper(),
             to_fmt=to_fmt.upper(),
             update_position=update_position,
-            require_all_markers=require_all_markers,
+            on_unconvertible_marker=on_unconvertible_marker,
+            plink_command=plink_command,
         )
     except FileExistsError as exc:
         raise click.ClickException(str(exc)) from exc
@@ -1204,13 +1243,16 @@ def convert_plink_cmd(bfile, bfile_dir, pattern, lookup, database, species,
               help="Allow batch conversion to replace existing output files")
 @click.option("--update-position/--keep-position", default=False, show_default=True,
               help="Also replace .pvar chromosome/base-pair columns with lookup positions")
-@click.option("--require-all-markers/--allow-missing-markers", default=True, show_default=True,
-              help="Fail if any .pvar marker is absent from the lookup table")
+@click.option("--on-unconvertible-marker", default="exclude", show_default=True,
+              type=click.Choice(["exclude", "fail", "keep"]),
+              help="How to handle .pvar markers missing from lookup or lacking target alleles")
+@click.option("--plink2", "plink2_command", default="plink2", show_default=True,
+              help="PLINK2 executable used when --on-unconvertible-marker=exclude")
 def convert_pfile_cmd(pfile, pfile_dir, pattern, lookup, database, species,
                       assembly, manifest_name, resolve_mixed_manifests,
                       on_ambiguous_marker, resolution_report, from_fmt, to_fmt,
                       output_prefix, outdir, suffix, overwrite, update_position,
-                      require_all_markers):
+                      on_unconvertible_marker, plink2_command):
     """Convert allele labels in a PLINK 2 pgen/pvar/psam fileset."""
     _require_one_input(pfile, pfile_dir, "--pfile", "--pfile-dir")
     marker_names = None
@@ -1253,7 +1295,8 @@ def convert_pfile_cmd(pfile, pfile_dir, pattern, lookup, database, species,
             from_fmt=from_fmt.upper(),
             to_fmt=to_fmt.upper(),
             update_position=update_position,
-            require_all_markers=require_all_markers,
+            on_unconvertible_marker=on_unconvertible_marker,
+            plink2_command=plink2_command,
         )
         _echo_plink_single_summary(stats, "PLINK 2 fileset")
         return
@@ -1270,7 +1313,8 @@ def convert_pfile_cmd(pfile, pfile_dir, pattern, lookup, database, species,
             from_fmt=from_fmt.upper(),
             to_fmt=to_fmt.upper(),
             update_position=update_position,
-            require_all_markers=require_all_markers,
+            on_unconvertible_marker=on_unconvertible_marker,
+            plink2_command=plink2_command,
         )
     except FileExistsError as exc:
         raise click.ClickException(str(exc)) from exc

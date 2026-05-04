@@ -43,36 +43,49 @@ def complement(value: str) -> str:
     return value.translate(COMPLEMENT).upper()
 
 
-def classify(expected: BimRow, actual: BimRow) -> str:
-    expected_pair = (expected.allele1, expected.allele2)
-    actual_pair = (actual.allele1, actual.allele2)
-    if actual_pair == expected_pair:
+def classify(source: BimRow, target: BimRow) -> str:
+    source_pair = (source.allele1, source.allele2)
+    target_pair = (target.allele1, target.allele2)
+    if target_pair == source_pair:
         return "exact"
-    if actual_pair == (expected.allele2, expected.allele1):
+    if target_pair == (source.allele2, source.allele1):
         return "swapped"
-    complement_pair = (complement(expected.allele1), complement(expected.allele2))
-    if actual_pair == complement_pair:
+    complement_pair = (complement(source.allele1), complement(source.allele2))
+    if target_pair == complement_pair:
         return "complement"
-    if actual_pair == (complement_pair[1], complement_pair[0]):
+    if target_pair == (complement_pair[1], complement_pair[0]):
         return "swapped_complement"
     return "mismatch"
 
 
-def compare(expected_path: Path, actual_path: Path) -> list[dict[str, str]]:
+def compare(
+    expected_path: Path,
+    actual_path: Path,
+    *,
+    original_path: Path | None = None,
+) -> list[dict[str, str]]:
     expected = read_bim(expected_path)
     actual = read_bim(actual_path)
+    original = read_bim(original_path) if original_path else {}
     rows: list[dict[str, str]] = []
     for marker in expected:
         expected_row = expected[marker]
         actual_row = actual.get(marker)
+        original_row = original.get(marker)
         if actual_row is None:
             rows.append({
                 "marker_name": marker,
                 "status": "missing_in_actual",
+                "mike_vs_original": classify(original_row, expected_row) if original_row else "",
+                "ours_vs_original": "",
                 "expected_chrom": expected_row.chrom,
                 "expected_position": expected_row.pos,
                 "expected_allele1": expected_row.allele1,
                 "expected_allele2": expected_row.allele2,
+                "original_chrom": original_row.chrom if original_row else "",
+                "original_position": original_row.pos if original_row else "",
+                "original_allele1": original_row.allele1 if original_row else "",
+                "original_allele2": original_row.allele2 if original_row else "",
                 "actual_chrom": "",
                 "actual_position": "",
                 "actual_allele1": "",
@@ -88,6 +101,12 @@ def compare(expected_path: Path, actual_path: Path) -> list[dict[str, str]]:
         rows.append({
             "marker_name": marker,
             "status": classify(expected_row, actual_row),
+            "mike_vs_original": classify(original_row, expected_row) if original_row else "",
+            "ours_vs_original": classify(original_row, actual_row) if original_row else "",
+            "original_chrom": original_row.chrom if original_row else "",
+            "original_position": original_row.pos if original_row else "",
+            "original_allele1": original_row.allele1 if original_row else "",
+            "original_allele2": original_row.allele2 if original_row else "",
             "expected_chrom": expected_row.chrom,
             "expected_position": expected_row.pos,
             "expected_allele1": expected_row.allele1,
@@ -103,6 +122,12 @@ def compare(expected_path: Path, actual_path: Path) -> list[dict[str, str]]:
         rows.append({
             "marker_name": marker,
             "status": "extra_in_actual",
+            "mike_vs_original": "",
+            "ours_vs_original": classify(original[marker], actual_row) if marker in original else "",
+            "original_chrom": original[marker].chrom if marker in original else "",
+            "original_position": original[marker].pos if marker in original else "",
+            "original_allele1": original[marker].allele1 if marker in original else "",
+            "original_allele2": original[marker].allele2 if marker in original else "",
             "expected_chrom": "",
             "expected_position": "",
             "expected_allele1": "",
@@ -121,7 +146,9 @@ def write_reports(rows: list[dict[str, str]], report_prefix: Path) -> None:
     csv_path = report_prefix.with_suffix(".csv")
     md_path = report_prefix.with_suffix(".md")
     fieldnames = [
-        "marker_name", "status", "expected_chrom", "expected_position",
+        "marker_name", "status", "mike_vs_original", "ours_vs_original",
+        "original_chrom", "original_position", "original_allele1",
+        "original_allele2", "expected_chrom", "expected_position",
         "expected_allele1", "expected_allele2", "actual_chrom",
         "actual_position", "actual_allele1", "actual_allele2",
         "position_status",
@@ -132,6 +159,10 @@ def write_reports(rows: list[dict[str, str]], report_prefix: Path) -> None:
         writer.writerows(rows)
 
     counts = Counter(row["status"] for row in rows)
+    transition_counts = Counter(
+        (row["mike_vs_original"], row["ours_vs_original"], row["status"])
+        for row in rows
+    )
     position_differences = sum(1 for row in rows if row["position_status"] == "different")
     lines = [
         "# PLINK BIM Comparison",
@@ -144,6 +175,21 @@ def write_reports(rows: list[dict[str, str]], report_prefix: Path) -> None:
     ]
     for status, count in sorted(counts.items()):
         lines.append(f"| {status} | {count} |")
+    if any(row["mike_vs_original"] or row["ours_vs_original"] for row in rows):
+        lines.extend([
+            "",
+            "## Original-To-Converted Relationships",
+            "",
+            "| Mike vs original | Ours vs original | Ours vs Mike | Count |",
+            "| --- | --- | --- | ---: |",
+        ])
+        for (mike_status, ours_status, comparison_status), count in sorted(
+            transition_counts.items(),
+            key=lambda item: (-item[1], item[0]),
+        ):
+            lines.append(
+                f"| {mike_status} | {ours_status} | {comparison_status} | {count} |"
+            )
     mismatch_examples = [
         row for row in rows
         if row["status"] not in {"exact", "swapped"}
@@ -154,10 +200,14 @@ def write_reports(rows: list[dict[str, str]], report_prefix: Path) -> None:
             "",
             "## Review Examples",
             "",
-            "| Marker | Status | Expected | Actual | Position |",
-            "| --- | --- | --- | --- | --- |",
+            "| Marker | Status | Original | Mike expected | Ours | Position |",
+            "| --- | --- | --- | --- | --- | --- |",
         ])
         for row in mismatch_examples:
+            original = (
+                f"{row['original_chrom']}:{row['original_position']} "
+                f"{row['original_allele1']}/{row['original_allele2']}"
+            ).strip()
             expected = (
                 f"{row['expected_chrom']}:{row['expected_position']} "
                 f"{row['expected_allele1']}/{row['expected_allele2']}"
@@ -168,7 +218,7 @@ def write_reports(rows: list[dict[str, str]], report_prefix: Path) -> None:
             ).strip()
             lines.append(
                 f"| {row['marker_name']} | {row['status']} | "
-                f"{expected} | {actual} | {row['position_status']} |"
+                f"{original} | {expected} | {actual} | {row['position_status']} |"
             )
     md_path.write_text("\n".join(lines) + "\n")
     print(f"Wrote {csv_path}")
@@ -179,10 +229,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Compare expected and actual PLINK BIM files.")
     parser.add_argument("--expected", required=True, type=Path, help="Expected converted .bim")
     parser.add_argument("--actual", required=True, type=Path, help="Actual converted .bim")
+    parser.add_argument("--original", required=False, type=Path, help="Original pre-conversion .bim")
     parser.add_argument("--report-prefix", required=True, type=Path, help="Output report prefix")
     args = parser.parse_args()
 
-    rows = compare(args.expected, args.actual)
+    rows = compare(args.expected, args.actual, original_path=args.original)
     write_reports(rows, args.report_prefix)
     failing = [
         row for row in rows

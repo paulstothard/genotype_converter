@@ -53,6 +53,11 @@ conda activate genotype-converter-env
 genotype-converter --help
 ```
 
+The conda environment includes PLINK 1 for `convert-plink` exclusion of
+unconvertible variants. PLINK 2 may need to be installed separately on platforms
+where Bioconda does not provide an `osx-arm64` package; pass its path with
+`convert-pfile --plink2 /path/to/plink2`.
+
 ### Option B — pip + venv
 
 ```bash
@@ -190,13 +195,13 @@ Supported genotype file layouts:
 
 | Command | Input | Output | Notes |
 |---|---|---|---|
-| `convert --layout wide` | CSV, one sample per row and one marker per column | CSV | Best for small datasets, examples, and debugging. Can also process a folder of CSV files. |
-| `convert --layout long` | CSV, one sample-marker genotype per row | CSV | Useful for database-style genotype tables. Can also process a folder of CSV files. |
-| `convert --layout illumina-matrix` | Illumina GenomeStudio/GSGT matrix report | Illumina/GSGT matrix report | Rewrites marker-by-sample genotype calls. |
-| `convert --layout illumina-long` | Illumina GenomeStudio/GSGT long report | Illumina/GSGT long report | Fills or rewrites the requested target allele columns. |
-| `convert --layout affymetrix-matrix` | Affymetrix/Axiom paired-call matrix | Affymetrix/Axiom paired-call matrix | Rewrites the AB or native nucleotide column in each sample pair. |
-| `convert-plink` | PLINK 1 binary fileset: `.bed`, `.bim`, `.fam` | PLINK 1 binary fileset | Rewrites allele labels in `.bim`; copies `.bed` and `.fam` unchanged. Can also process a folder of filesets. |
-| `convert-pfile` | PLINK 2 fileset: `.pgen`, `.pvar`, `.psam` | PLINK 2 fileset | Rewrites biallelic `REF`/`ALT` labels in `.pvar`; copies `.pgen` and `.psam` unchanged. Can also process a folder of filesets. |
+| `convert --layout wide` | CSV, one sample per row and one marker per column | CSV | Rewrites genotype cells. Unconvertible marker columns are excluded by default. Can also process a folder of CSV files. |
+| `convert --layout long` | CSV, one sample-marker genotype per row | CSV | Rewrites genotype rows. Unconvertible marker rows are excluded by default. Can also process a folder of CSV files. |
+| `convert --layout illumina-matrix` | Illumina GenomeStudio/GSGT matrix report | Illumina/GSGT matrix report | Rewrites marker-by-sample genotype calls. Unconvertible marker rows are excluded by default. |
+| `convert --layout illumina-long` | Illumina GenomeStudio/GSGT long report | Illumina/GSGT long report | Fills or rewrites the requested target allele columns. Unconvertible marker rows are excluded by default. |
+| `convert --layout affymetrix-matrix` | Affymetrix/Axiom paired-call matrix | Affymetrix/Axiom paired-call matrix | Rewrites the AB or native nucleotide column in each sample pair. Unconvertible marker rows are excluded by default. |
+| `convert-plink` | PLINK 1 binary fileset: `.bed`, `.bim`, `.fam` | PLINK 1 binary fileset | Rewrites allele labels in `.bim`. Unconvertible variants are excluded with PLINK by default so `.bed/.bim/.fam` stay synchronized. Can also process a folder of filesets. |
+| `convert-pfile` | PLINK 2 fileset: `.pgen`, `.pvar`, `.psam` | PLINK 2 fileset | Rewrites biallelic `REF`/`ALT` labels in `.pvar`. Unconvertible variants are excluded with PLINK2 by default so `.pgen/.pvar/.psam` stay synchronized. Can also process a folder of filesets. |
 
 PLINK text formats such as `.ped/.map` are not converted directly. Convert them
 to PLINK binary with PLINK first, then use `convert-plink` or `convert-pfile`.
@@ -229,6 +234,15 @@ It also writes `conversion_summary.csv` in the output directory with per-file
 conversion counts. Existing batch outputs are not overwritten unless
 `--overwrite` is supplied.
 
+By default, markers that are missing from the lookup table or cannot be fully
+converted to the target allele format are excluded from `convert` text outputs.
+For wide CSV this removes marker columns; for long CSV and Illumina/Affymetrix
+reports this removes marker rows. The command writes
+`<output>.marker_conversion_report.csv` and, when markers are excluded,
+`<output>.exclude_markers.txt`. Use `--on-unconvertible-marker fail` for strict
+checking, or `--on-unconvertible-marker keep` to preserve the original file
+shape and leave unresolved allele values unchanged.
+
 ### PLINK 1 binary
 
 ```bash
@@ -256,6 +270,13 @@ An input prefix `herd_a` produces `herd_a.converted.bed`,
 `herd_a.converted.bim`, and `herd_a.converted.fam` by default. Batch mode also
 writes `conversion_summary.csv`.
 
+If a marker is missing from the lookup table or cannot be fully converted to
+the target allele format, the default behavior is to exclude that variant with
+PLINK before rewriting `.bim`. The command also writes
+`<out>.marker_conversion_report.csv` and `<out>.exclude_markers.txt`. Use
+`--on-unconvertible-marker fail` for strict checking, or
+`--on-unconvertible-marker keep` only for audit/debugging runs.
+
 ### PLINK 2 p-files
 
 ```bash
@@ -282,6 +303,11 @@ genotype-converter convert-pfile \
 An input prefix `herd_a` produces `herd_a.converted.pgen`,
 `herd_a.converted.pvar`, and `herd_a.converted.psam` by default. Batch mode also
 writes `conversion_summary.csv`.
+
+`convert-pfile` uses the same unconvertible-marker policy as `convert-plink`,
+but calls PLINK2 for exclusion. If PLINK2 is not on `PATH`, pass it with
+`--plink2 /path/to/plink2` or use `--on-unconvertible-marker fail` for a report
+without writing a filtered p-file.
 
 ### Optional SQLite database
 

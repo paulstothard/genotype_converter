@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import csv
+import os
+from pathlib import Path
 
 import pytest
 
@@ -24,6 +26,61 @@ def _write_plink_files(prefix, bim_rows):
     prefix.with_suffix(".bim").write_text(
         "".join("\t".join(row) + "\n" for row in bim_rows)
     )
+
+
+def _write_fake_plink(tmp_path):
+    script = tmp_path / "fake_plink.py"
+    script.write_text(
+        """#!/usr/bin/env python3
+import shutil
+import sys
+from pathlib import Path
+
+args = sys.argv[1:]
+input_prefix = Path(args[args.index("--bfile") + 1])
+exclude = set(Path(args[args.index("--exclude") + 1]).read_text().splitlines())
+out_prefix = Path(args[args.index("--out") + 1])
+out_prefix.with_suffix(".bed").parent.mkdir(parents=True, exist_ok=True)
+shutil.copyfile(input_prefix.with_suffix(".bed"), out_prefix.with_suffix(".bed"))
+shutil.copyfile(input_prefix.with_suffix(".fam"), out_prefix.with_suffix(".fam"))
+with input_prefix.with_suffix(".bim").open() as src, out_prefix.with_suffix(".bim").open("w") as dst:
+    for line in src:
+        fields = line.split()
+        if fields and fields[1] not in exclude:
+            dst.write(line)
+"""
+    )
+    script.chmod(script.stat().st_mode | os.stat(script).st_mode | 0o111)
+    return str(script)
+
+
+def _write_fake_plink2(tmp_path):
+    script = tmp_path / "fake_plink2.py"
+    script.write_text(
+        """#!/usr/bin/env python3
+import shutil
+import sys
+from pathlib import Path
+
+args = sys.argv[1:]
+input_prefix = Path(args[args.index("--pfile") + 1])
+exclude = set(Path(args[args.index("--exclude") + 1]).read_text().splitlines())
+out_prefix = Path(args[args.index("--out") + 1])
+out_prefix.with_suffix(".pgen").parent.mkdir(parents=True, exist_ok=True)
+shutil.copyfile(input_prefix.with_suffix(".pgen"), out_prefix.with_suffix(".pgen"))
+shutil.copyfile(input_prefix.with_suffix(".psam"), out_prefix.with_suffix(".psam"))
+with input_prefix.with_suffix(".pvar").open() as src, out_prefix.with_suffix(".pvar").open("w") as dst:
+    for line in src:
+        if line.startswith("#") or not line.strip():
+            dst.write(line)
+            continue
+        fields = line.split()
+        if fields and fields[2] not in exclude:
+            dst.write(line)
+"""
+    )
+    script.chmod(script.stat().st_mode | os.stat(script).st_mode | 0o111)
+    return str(script)
 
 
 def test_convert_plink_bfile_rewrites_bim_and_copies_bed_fam(table, tmp_path):
@@ -54,6 +111,98 @@ def test_convert_plink_bfile_rewrites_bim_and_copies_bed_fam(table, tmp_path):
         "1\tSNP1\t0\t300\tA\tG",
         "1\tSNP2\t0\t700\tT\tG",
     ]
+
+
+def test_convert_plink_bfile_strictly_rejects_incomplete_target_mapping(tmp_path):
+    input_prefix = tmp_path / "input"
+    output_prefix = tmp_path / "output"
+    table = {
+        "SNP_NO_PLUS": [
+            {"TOP": "A", "PLUS": ""},
+            {"TOP": "C", "PLUS": ""},
+        ]
+    }
+    _write_plink_files(input_prefix, [["1", "SNP_NO_PLUS", "0", "100", "A", "C"]])
+
+    with pytest.raises(ValueError, match="cannot be fully converted"):
+        convert_plink_bfile(
+            input_prefix=str(input_prefix),
+            output_prefix=str(output_prefix),
+            table=table,
+            from_fmt="TOP",
+            to_fmt="PLUS",
+            on_unconvertible_marker="fail",
+        )
+    assert not output_prefix.with_suffix(".bim").exists()
+
+
+def test_convert_plink_bfile_excludes_incomplete_target_mapping_by_default(tmp_path):
+    input_prefix = tmp_path / "input"
+    output_prefix = tmp_path / "output"
+    plink = _write_fake_plink(tmp_path)
+    table = {
+        "SNP_OK": [
+            {"TOP": "A", "PLUS": "T"},
+            {"TOP": "C", "PLUS": "G"},
+        ],
+        "SNP_NO_PLUS": [
+            {"TOP": "A", "PLUS": ""},
+            {"TOP": "C", "PLUS": ""},
+        ]
+    }
+    _write_plink_files(
+        input_prefix,
+        [
+            ["1", "SNP_OK", "0", "100", "A", "C"],
+            ["1", "SNP_NO_PLUS", "0", "200", "A", "C"],
+        ],
+    )
+
+    stats = convert_plink_bfile(
+        input_prefix=str(input_prefix),
+        output_prefix=str(output_prefix),
+        table=table,
+        from_fmt="TOP",
+        to_fmt="PLUS",
+        plink_command=plink,
+    )
+
+    assert stats.variants_total == 2
+    assert stats.variants_converted == 1
+    assert stats.variants_incomplete_mapping == 1
+    assert stats.variants_excluded == 1
+    assert stats.alleles_changed == 2
+    assert output_prefix.with_suffix(".bim").read_text().strip() == "1\tSNP_OK\t0\t100\tT\tG"
+    report_rows = list(csv.DictReader(Path(stats.marker_report_path).read_text().splitlines()))
+    assert report_rows[0]["marker_name"] == "SNP_NO_PLUS"
+    assert report_rows[0]["action"] == "exclude"
+    assert "missing_PLUS_allele" in report_rows[0]["reason"]
+    assert Path(stats.exclude_marker_path).read_text().strip() == "SNP_NO_PLUS"
+
+
+def test_convert_plink_bfile_can_keep_unconvertible_markers_for_audit(tmp_path):
+    input_prefix = tmp_path / "input"
+    output_prefix = tmp_path / "output"
+    table = {
+        "SNP_NO_PLUS": [
+            {"TOP": "A", "PLUS": ""},
+            {"TOP": "C", "PLUS": ""},
+        ]
+    }
+    _write_plink_files(input_prefix, [["1", "SNP_NO_PLUS", "0", "100", "A", "C"]])
+
+    stats = convert_plink_bfile(
+        input_prefix=str(input_prefix),
+        output_prefix=str(output_prefix),
+        table=table,
+        from_fmt="TOP",
+        to_fmt="PLUS",
+        on_unconvertible_marker="keep",
+    )
+
+    assert stats.variants_incomplete_mapping == 1
+    assert stats.variants_excluded == 0
+    assert output_prefix.with_suffix(".bim").read_text().strip() == "1\tSNP_NO_PLUS\t0\t100\tA\tC"
 
 
 def test_convert_plink_bfile_can_update_positions(table, tmp_path):
@@ -90,7 +239,7 @@ def test_convert_plink_bfile_requires_all_three_files(table, tmp_path):
         )
 
 
-def test_convert_plink_bfile_rejects_missing_lookup_marker(table, tmp_path):
+def test_convert_plink_bfile_strictly_rejects_missing_lookup_marker(table, tmp_path):
     input_prefix = tmp_path / "input"
     _write_plink_files(
         input_prefix,
@@ -104,6 +253,7 @@ def test_convert_plink_bfile_rejects_missing_lookup_marker(table, tmp_path):
             table=table,
             from_fmt="TOP",
             to_fmt="PLUS",
+            on_unconvertible_marker="fail",
         )
 
 
@@ -206,7 +356,7 @@ def test_convert_plink_bfile_batch_reports_allowed_missing_markers(table, tmp_pa
         table=table,
         from_fmt="TOP",
         to_fmt="PLUS",
-        require_all_markers=False,
+        on_unconvertible_marker="keep",
     )
 
     assert stats.filesets_converted == 1
@@ -221,6 +371,41 @@ def test_convert_plink_bfile_batch_reports_allowed_missing_markers(table, tmp_pa
     assert summary_rows[0]["variants_total"] == "2"
     assert summary_rows[0]["variants_converted"] == "1"
     assert summary_rows[0]["variants_missing_lookup"] == "1"
+
+
+def test_convert_plink_bfile_batch_excludes_missing_markers_with_plink(table, tmp_path):
+    plink = _write_fake_plink(tmp_path)
+    input_dir = tmp_path / "plink"
+    input_dir.mkdir()
+    _write_plink_files(
+        input_dir / "herd",
+        [
+            ["1", "SNP2", "0", "700", "A", "C"],
+            ["1", "NOT_IN_LOOKUP", "0", "100", "A", "G"],
+        ],
+    )
+    out_dir = tmp_path / "converted"
+
+    stats = convert_plink_bfile_batch(
+        input_dir=str(input_dir),
+        output_dir=str(out_dir),
+        pattern="*.bed",
+        suffix=".plus",
+        overwrite=False,
+        table=table,
+        from_fmt="TOP",
+        to_fmt="PLUS",
+        plink_command=plink,
+    )
+
+    assert stats.stats[0].variants_total == 2
+    assert stats.stats[0].variants_converted == 1
+    assert stats.stats[0].variants_missing_lookup == 1
+    assert stats.stats[0].variants_excluded == 1
+    assert (out_dir / "herd.plus.bim").read_text().splitlines() == [
+        "1\tSNP2\t0\t700\tT\tG",
+    ]
+    assert (out_dir / "herd.plus.exclude_markers.txt").read_text().strip() == "NOT_IN_LOOKUP"
 
 
 def _write_pfile(prefix, pvar_lines):
@@ -303,7 +488,7 @@ def test_convert_plink_pfile_requires_all_three_files(table, tmp_path):
         )
 
 
-def test_convert_plink_pfile_rejects_missing_lookup_marker(table, tmp_path):
+def test_convert_plink_pfile_strictly_rejects_missing_lookup_marker(table, tmp_path):
     input_prefix = tmp_path / "input2"
     _write_pfile(
         input_prefix,
@@ -320,7 +505,42 @@ def test_convert_plink_pfile_rejects_missing_lookup_marker(table, tmp_path):
             table=table,
             from_fmt="TOP",
             to_fmt="PLUS",
+            on_unconvertible_marker="fail",
         )
+
+
+def test_convert_plink_pfile_excludes_missing_markers_with_plink2(table, tmp_path):
+    plink2 = _write_fake_plink2(tmp_path)
+    input_prefix = tmp_path / "input2"
+    output_prefix = tmp_path / "output2"
+    _write_pfile(
+        input_prefix,
+        [
+            "#CHROM\tPOS\tID\tREF\tALT",
+            "1\t700\tSNP2\tA\tC",
+            "1\t100\tNOT_IN_LOOKUP\tA\tG",
+        ],
+    )
+
+    stats = convert_plink_pfile(
+        input_prefix=str(input_prefix),
+        output_prefix=str(output_prefix),
+        table=table,
+        from_fmt="TOP",
+        to_fmt="PLUS",
+        plink2_command=plink2,
+    )
+
+    assert stats.variants_total == 2
+    assert stats.variants_converted == 1
+    assert stats.variants_missing_lookup == 1
+    assert stats.variants_excluded == 1
+    assert output_prefix.with_suffix(".pvar").read_text().splitlines() == [
+        "#CHROM\tPOS\tID\tREF\tALT",
+        "1\t700\tSNP2\tT\tG",
+    ]
+    assert output_prefix.with_suffix(".pgen").read_bytes() == input_prefix.with_suffix(".pgen").read_bytes()
+    assert output_prefix.with_suffix(".psam").read_text() == input_prefix.with_suffix(".psam").read_text()
 
 
 def test_convert_plink_pfile_rejects_multiallelic_marker(table, tmp_path):
