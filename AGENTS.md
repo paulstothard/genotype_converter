@@ -16,6 +16,8 @@
   - `validation/mixed_manifest/scripts/run_database_build.sh`
   - `validation/mixed_manifest/scripts/run_example_conversions.sh`
   - `validation/mixed_manifest/scripts/run_check_example_conversions.sh`
+  - `validation/plink_comparison/scripts/run_plink_comparison.sh`
+  - `validation/plink_comparison/scripts/compare_plink_bim.py`
 - Do not run `validation/scripts/run_bovine_hd_build.sh` or
   `validation/mixed_manifest/scripts/run_database_build.sh` unless the user explicitly
   asks for the large build. The mixed-manifest database build script also
@@ -23,6 +25,10 @@
 - Do not stage or commit large validation inputs or generated outputs under
   `validation/data/`, `validation/old_pipeline/`, or `validation/new_pipeline/`.
   These are intentionally ignored.
+- Do not stage or commit collaborator PLINK files or generated reports under
+  `validation/plink_comparison/input/`,
+  `validation/plink_comparison/converted/`, or
+  `validation/plink_comparison/reports/`.
 - Do not change old pipeline outputs. If a comparison needs normalization,
   create a separate report or helper output and document the command.
 - Do not change test expectations just to make a failing test pass. If expected

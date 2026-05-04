@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 LOOKUP_COLUMNS = [
     "marker_name",
@@ -77,6 +77,19 @@ class MarkerResolution:
     candidate_manifest_names: str
     candidate_count: int
     reason: str
+
+
+@dataclass(frozen=True)
+class RemovedSourceStats:
+    database_path: str
+    sources_removed: int
+    marker_rules_removed: int
+
+
+@dataclass(frozen=True)
+class DatabaseValidation:
+    status: str
+    checks: list[dict[str, Any]]
 
 
 def _utc_now() -> str:
@@ -158,6 +171,18 @@ def init_database(database_path: str) -> None:
                 ON marker_rules(source_id, marker_name);
             CREATE INDEX IF NOT EXISTS idx_lookup_sources_context
                 ON lookup_sources(species, assembly, manifest_name);
+
+            CREATE TABLE IF NOT EXISTS import_warnings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source_id INTEGER NOT NULL REFERENCES lookup_sources(id) ON DELETE CASCADE,
+                warning_type TEXT NOT NULL,
+                marker_name TEXT,
+                row_count INTEGER,
+                message TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_import_warnings_source
+                ON import_warnings(source_id);
             """
         )
         conn.execute(
@@ -222,6 +247,7 @@ def import_lookup(
     tool_version: str | None = None,
     notes: str | None = None,
     replace: bool = False,
+    replace_context: bool = False,
 ) -> LookupImportStats:
     init_database(database_path)
     rows = _lookup_rows(lookup_path)
@@ -235,6 +261,24 @@ def import_lookup(
         reference_name = Path(reference_path).name
 
     with connect(database_path) as conn:
+        rows_replaced = 0
+        if replace_context:
+            matching = conn.execute(
+                """
+                SELECT id FROM lookup_sources
+                WHERE species = ? AND assembly = ? AND manifest_name = ?
+                """,
+                (species, assembly, manifest_name),
+            ).fetchall()
+            matching_ids = [int(row["id"]) for row in matching]
+            if matching_ids:
+                placeholders = ",".join("?" for _ in matching_ids)
+                conn.execute(
+                    f"DELETE FROM lookup_sources WHERE id IN ({placeholders})",
+                    matching_ids,
+                )
+                rows_replaced = len(matching_ids)
+
         existing = conn.execute(
             """
             SELECT id FROM lookup_sources
@@ -242,7 +286,6 @@ def import_lookup(
             """,
             (species, assembly, manifest_name, lookup_sha),
         ).fetchone()
-        rows_replaced = 0
         if existing and not replace:
             raise ValueError(
                 "Lookup source already exists in database. Use replace=True to refresh it."
@@ -312,6 +355,22 @@ def import_lookup(
                     row.get("B_vcf", ""),
                 ),
             )
+        for marker_name in duplicate_marker_names:
+            conn.execute(
+                """
+                INSERT INTO import_warnings (
+                    source_id, warning_type, marker_name, row_count, message
+                )
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    source_id,
+                    "conflicting_duplicate_marker",
+                    marker_name,
+                    None,
+                    "Skipped conflicting duplicate marker rows within one lookup source.",
+                ),
+            )
 
     return LookupImportStats(
         database_path=database_path,
@@ -328,6 +387,303 @@ def _int_or_none(value: str | None) -> int | None:
     if value is None or value == "":
         return None
     return int(value)
+
+
+def database_stats(database_path: str) -> dict[str, Any]:
+    init_database(database_path)
+    with connect(database_path) as conn:
+        source_count = conn.execute("SELECT COUNT(*) FROM lookup_sources").fetchone()[0]
+        rule_count = conn.execute("SELECT COUNT(*) FROM marker_rules").fetchone()[0]
+        species_count = conn.execute(
+            "SELECT COUNT(DISTINCT species) FROM lookup_sources"
+        ).fetchone()[0]
+        assembly_count = conn.execute(
+            "SELECT COUNT(DISTINCT species || char(31) || assembly) FROM lookup_sources"
+        ).fetchone()[0]
+        warning_count = conn.execute("SELECT COUNT(*) FROM import_warnings").fetchone()[0]
+        unpositioned_count = conn.execute(
+            """
+            SELECT COUNT(*) FROM marker_rules
+            WHERE chromosome IS NULL OR chromosome = '' OR position IS NULL
+            """
+        ).fetchone()[0]
+    return {
+        "database_path": database_path,
+        "schema_version": SCHEMA_VERSION,
+        "species": int(species_count),
+        "assemblies": int(assembly_count),
+        "lookup_sources": int(source_count),
+        "marker_rules": int(rule_count),
+        "import_warnings": int(warning_count),
+        "unpositioned_marker_rules": int(unpositioned_count),
+    }
+
+
+def source_details(database_path: str, source_id: int) -> dict[str, Any]:
+    init_database(database_path)
+    with connect(database_path) as conn:
+        source = conn.execute(
+            "SELECT * FROM lookup_sources WHERE id = ?",
+            (source_id,),
+        ).fetchone()
+        if source is None:
+            raise ValueError(f"No lookup source found for id {source_id}")
+        row = dict(source)
+        row["marker_rules"] = conn.execute(
+            "SELECT COUNT(*) FROM marker_rules WHERE source_id = ?",
+            (source_id,),
+        ).fetchone()[0]
+        row["import_warnings"] = conn.execute(
+            "SELECT COUNT(*) FROM import_warnings WHERE source_id = ?",
+            (source_id,),
+        ).fetchone()[0]
+    return row
+
+
+def list_import_warnings(
+    database_path: str,
+    *,
+    source_id: int | None = None,
+) -> list[dict[str, Any]]:
+    init_database(database_path)
+    clauses: list[str] = []
+    params: list[Any] = []
+    if source_id is not None:
+        clauses.append("w.source_id = ?")
+        params.append(source_id)
+    query = """
+        SELECT
+            w.id, w.source_id, s.species, s.assembly, s.manifest_name,
+            w.warning_type, w.marker_name, w.row_count, w.message
+        FROM import_warnings w
+        JOIN lookup_sources s ON s.id = w.source_id
+    """
+    if clauses:
+        query += " WHERE " + " AND ".join(clauses)
+    query += " ORDER BY w.source_id, w.warning_type, w.marker_name, w.id"
+    with connect(database_path) as conn:
+        rows = conn.execute(query, params).fetchall()
+    return [dict(row) for row in rows]
+
+
+def remove_source(
+    database_path: str,
+    *,
+    source_id: int | None = None,
+    species: str | None = None,
+    assembly: str | None = None,
+    manifest_name: str | None = None,
+) -> RemovedSourceStats:
+    if source_id is None and not (species and assembly and manifest_name):
+        raise ValueError(
+            "Provide source_id or species, assembly, and manifest_name."
+        )
+    with connect(database_path) as conn:
+        if source_id is not None:
+            rows = conn.execute(
+                "SELECT id FROM lookup_sources WHERE id = ?",
+                (source_id,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT id FROM lookup_sources
+                WHERE species = ? AND assembly = ? AND manifest_name = ?
+                """,
+                (species, assembly, manifest_name),
+            ).fetchall()
+        ids = [int(row["id"]) for row in rows]
+        if not ids:
+            return RemovedSourceStats(database_path, 0, 0)
+        placeholders = ",".join("?" for _ in ids)
+        rule_count = conn.execute(
+            f"SELECT COUNT(*) FROM marker_rules WHERE source_id IN ({placeholders})",
+            ids,
+        ).fetchone()[0]
+        conn.execute(
+            f"DELETE FROM lookup_sources WHERE id IN ({placeholders})",
+            ids,
+        )
+    return RemovedSourceStats(
+        database_path=database_path,
+        sources_removed=len(ids),
+        marker_rules_removed=int(rule_count),
+    )
+
+
+def vacuum_database(database_path: str) -> None:
+    conn = sqlite3.connect(database_path)
+    try:
+        conn.execute("VACUUM")
+    finally:
+        conn.close()
+
+
+def duplicate_marker_report(
+    database_path: str,
+    *,
+    species: str | None = None,
+    assembly: str | None = None,
+    limit: int | None = None,
+) -> list[dict[str, Any]]:
+    clauses: list[str] = []
+    params: list[Any] = []
+    if species:
+        clauses.append("s.species = ?")
+        params.append(species)
+    if assembly:
+        clauses.append("s.assembly = ?")
+        params.append(assembly)
+    query = """
+        SELECT
+            s.species, s.assembly, r.marker_name,
+            COUNT(*) AS rule_count,
+            COUNT(DISTINCT s.id) AS source_count,
+            GROUP_CONCAT(DISTINCT s.manifest_name) AS manifest_names
+        FROM marker_rules r
+        JOIN lookup_sources s ON s.id = r.source_id
+    """
+    if clauses:
+        query += " WHERE " + " AND ".join(clauses)
+    query += """
+        GROUP BY s.species, s.assembly, r.marker_name
+        HAVING source_count > 1
+        ORDER BY source_count DESC, rule_count DESC, r.marker_name
+    """
+    if limit is not None:
+        query += " LIMIT ?"
+        params.append(limit)
+    with connect(database_path) as conn:
+        rows = conn.execute(query, params).fetchall()
+    return [dict(row) for row in rows]
+
+
+def unresolved_marker_report(
+    database_path: str,
+    *,
+    species: str | None = None,
+    assembly: str | None = None,
+    manifest_name: str | None = None,
+    limit: int | None = None,
+) -> list[dict[str, Any]]:
+    clauses = ["(r.chromosome IS NULL OR r.chromosome = '' OR r.position IS NULL)"]
+    params: list[Any] = []
+    if species:
+        clauses.append("s.species = ?")
+        params.append(species)
+    if assembly:
+        clauses.append("s.assembly = ?")
+        params.append(assembly)
+    if manifest_name:
+        clauses.append("s.manifest_name = ?")
+        params.append(manifest_name)
+    query = f"""
+        SELECT
+            s.id AS source_id, s.species, s.assembly, s.manifest_name,
+            r.marker_name, r.determination_type, r.chromosome, r.position
+        FROM marker_rules r
+        JOIN lookup_sources s ON s.id = r.source_id
+        WHERE {" AND ".join(clauses)}
+        ORDER BY s.species, s.assembly, s.manifest_name, r.marker_name
+    """
+    if limit is not None:
+        query += " LIMIT ?"
+        params.append(limit)
+    with connect(database_path) as conn:
+        rows = conn.execute(query, params).fetchall()
+    return [dict(row) for row in rows]
+
+
+def validate_database(database_path: str) -> DatabaseValidation:
+    init_database(database_path)
+    checks: list[dict[str, Any]] = []
+    with connect(database_path) as conn:
+        integrity = conn.execute("PRAGMA integrity_check").fetchone()[0]
+        checks.append(
+            {
+                "check": "sqlite_integrity",
+                "status": "pass" if integrity == "ok" else "fail",
+                "count": 0 if integrity == "ok" else 1,
+                "details": str(integrity),
+            }
+        )
+        fk_rows = conn.execute("PRAGMA foreign_key_check").fetchall()
+        checks.append(
+            {
+                "check": "foreign_keys",
+                "status": "pass" if not fk_rows else "fail",
+                "count": len(fk_rows),
+                "details": "" if not fk_rows else "foreign_key_check returned rows",
+            }
+        )
+        duplicate_contexts = conn.execute(
+            """
+            SELECT COUNT(*) FROM (
+                SELECT species, assembly, manifest_name, COUNT(*) AS n
+                FROM lookup_sources
+                GROUP BY species, assembly, manifest_name
+                HAVING n > 1
+            )
+            """
+        ).fetchone()[0]
+        checks.append(
+            {
+                "check": "duplicate_source_contexts",
+                "status": "warn" if duplicate_contexts else "pass",
+                "count": int(duplicate_contexts),
+                "details": "same species/assembly/manifest appears more than once"
+                if duplicate_contexts else "",
+            }
+        )
+        duplicate_rules = conn.execute(
+            """
+            SELECT COUNT(*) FROM (
+                SELECT source_id, marker_name, COUNT(*) AS n
+                FROM marker_rules
+                GROUP BY source_id, marker_name
+                HAVING n > 1
+            )
+            """
+        ).fetchone()[0]
+        checks.append(
+            {
+                "check": "duplicate_rules_within_source",
+                "status": "fail" if duplicate_rules else "pass",
+                "count": int(duplicate_rules),
+                "details": "same marker name has multiple rules in one source"
+                if duplicate_rules else "",
+            }
+        )
+        empty_sources = conn.execute(
+            """
+            SELECT COUNT(*) FROM lookup_sources s
+            LEFT JOIN marker_rules r ON r.source_id = s.id
+            WHERE r.id IS NULL
+            """
+        ).fetchone()[0]
+        checks.append(
+            {
+                "check": "empty_sources",
+                "status": "warn" if empty_sources else "pass",
+                "count": int(empty_sources),
+                "details": "lookup source has no marker rules" if empty_sources else "",
+            }
+        )
+        warnings = conn.execute("SELECT COUNT(*) FROM import_warnings").fetchone()[0]
+        checks.append(
+            {
+                "check": "import_warnings",
+                "status": "warn" if warnings else "pass",
+                "count": int(warnings),
+                "details": "import warnings are present" if warnings else "",
+            }
+        )
+    status = "pass"
+    if any(check["status"] == "fail" for check in checks):
+        status = "fail"
+    elif any(check["status"] == "warn" for check in checks):
+        status = "warn"
+    return DatabaseValidation(status=status, checks=checks)
 
 
 def list_species(database_path: str) -> list[str]:

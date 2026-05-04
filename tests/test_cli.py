@@ -41,11 +41,19 @@ def test_db_options_are_shown_in_help():
     for command in [
         "init",
         "build",
+        "stats",
         "import-lookup",
         "list-species",
         "list-assemblies",
         "marker",
         "discover-sources",
+        "source",
+        "remove-source",
+        "warnings",
+        "duplicates",
+        "unresolved",
+        "validate",
+        "vacuum",
     ]:
         assert command in result.output
 

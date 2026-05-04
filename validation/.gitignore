@@ -21,6 +21,9 @@ mixed_manifest/*.sqlite3
 mixed_manifest/*.sqlite-journal
 mixed_manifest/*.sqlite3-journal
 mixed_manifest/temp-dont-commit/
+plink_comparison/input/*
+plink_comparison/converted/*
+plink_comparison/reports/*
 
 # Allow directory placeholders.
 !data/.gitkeep
@@ -29,3 +32,7 @@ mixed_manifest/temp-dont-commit/
 !reports/.gitkeep
 !mixed_manifest/README.md
 !mixed_manifest/**/.gitkeep
+!plink_comparison/README.md
+!plink_comparison/scripts/**
+!plink_comparison/**/.gitkeep
+plink_comparison/scripts/__pycache__/

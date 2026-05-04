@@ -267,8 +267,10 @@ The v0.1.1 release covers the core database conversion workflow:
 
 Future work to preserve:
 
-- Add database maintenance commands for removing stale sources, replacing by
-  manifest/source context, and validating database contents.
+- Expand database maintenance reports if real use shows additional stale-source
+  patterns. The current commands cover source removal, context replacement,
+  validation, warnings, duplicate marker reports, unresolved marker reports,
+  stats, and vacuum.
 - Improve batch reports with per-file mixed-manifest summaries in addition to
   the global marker-resolution report.
 - Record a short bovine validation status note after the next full validation

@@ -14,10 +14,13 @@ from .convert_plink import (
     convert_plink_pfile_batch,
 )
 from .database import (
+    database_stats,
     discover_source_folders,
+    duplicate_marker_report,
     infer_lookup_source_for_markers,
     import_lookup,
     init_database,
+    list_import_warnings,
     list_assemblies,
     list_manifests,
     list_species,
@@ -25,8 +28,13 @@ from .database import (
     load_lookup_table_from_database,
     load_lookup_table_from_database_source,
     query_marker,
+    remove_source,
     rows_to_csv,
     rows_to_json,
+    source_details,
+    unresolved_marker_report,
+    vacuum_database,
+    validate_database,
 )
 
 
@@ -103,7 +111,12 @@ def _echo_rows(rows, fieldnames: list[str], output_format: str) -> None:
         return
     click.echo("\t".join(fieldnames))
     for row in rows:
-        click.echo("\t".join(str(row.get(field, "") or "") for field in fieldnames))
+        click.echo(
+            "\t".join(
+                "" if row.get(field) is None else str(row.get(field, ""))
+                for field in fieldnames
+            )
+        )
 
 
 def _manifest_name_from_path(path: str) -> str:
@@ -493,9 +506,11 @@ def db_init_cmd(database):
 @click.option("--notes", required=False, help="Free-text import note")
 @click.option("--replace/--no-replace", default=False, show_default=True,
               help="Replace an existing import with the same species, assembly, manifest, and lookup checksum")
+@click.option("--replace-context/--no-replace-context", default=False, show_default=True,
+              help="Replace all existing imports with the same species, assembly, and manifest")
 def db_import_lookup_cmd(database, lookup, species, assembly, manifest_name,
                          manifest_path, reference_name, reference_path,
-                         tool_version, notes, replace):
+                         tool_version, notes, replace, replace_context):
     """Import a built lookup CSV into the database."""
     stats = import_lookup(
         database_path=database,
@@ -509,6 +524,7 @@ def db_import_lookup_cmd(database, lookup, species, assembly, manifest_name,
         tool_version=tool_version,
         notes=notes,
         replace=replace,
+        replace_context=replace_context,
     )
     click.echo(
         f"Imported {stats.rows_imported} marker rules from {lookup} "
@@ -527,7 +543,7 @@ def db_import_lookup_cmd(database, lookup, species, assembly, manifest_name,
             f"duplicate marker name(s): {preview}{more}."
         )
     if stats.rows_replaced:
-        click.echo("Replaced existing source with the same lookup checksum.")
+        click.echo(f"Replaced {stats.rows_replaced} existing source(s).")
 
 
 @db_cmd.command("build")
@@ -540,9 +556,11 @@ def db_import_lookup_cmd(database, lookup, species, assembly, manifest_name,
               help="Worker processes for each build. Use 1 for large references unless memory is available.")
 @click.option("--replace/--no-replace", default=False, show_default=True,
               help="Replace existing imports with the same species, assembly, manifest, and lookup checksum")
+@click.option("--replace-context/--no-replace-context", default=False, show_default=True,
+              help="Replace existing imports with the same species, assembly, and manifest")
 @click.option("--progress/--no-progress", default=True, show_default=True,
               help="Show build progress")
-def db_build_cmd(source_root, database, build_outdir, workers, replace, progress):
+def db_build_cmd(source_root, database, build_outdir, workers, replace, replace_context, progress):
     """Build lookup files from source folders and import them into SQLite."""
     folders = discover_source_folders(source_root)
     if not folders:
@@ -595,6 +613,7 @@ def db_build_cmd(source_root, database, build_outdir, workers, replace, progress
                 reference_name=Path(reference_path).name,
                 reference_path=reference_path,
                 replace=replace,
+                replace_context=replace_context,
             )
             total_imported += 1
             total_rules += import_stats.rows_imported
@@ -712,6 +731,167 @@ def db_discover_sources_cmd(source_root, output_format):
         "manifest_paths", "reference_paths",
     ]
     _echo_rows(rows, fieldnames, output_format)
+
+
+@db_cmd.command("stats")
+@click.option("--database", required=True, type=click.Path(exists=True),
+              help="SQLite database path")
+@click.option("--format", "output_format", default="table", show_default=True,
+              type=click.Choice(["table", "csv", "json"]),
+              help="Output format")
+def db_stats_cmd(database, output_format):
+    """Summarize database contents."""
+    row = database_stats(database)
+    fieldnames = [
+        "database_path", "schema_version", "species", "assemblies",
+        "lookup_sources", "marker_rules", "import_warnings",
+        "unpositioned_marker_rules",
+    ]
+    _echo_rows([row], fieldnames, output_format)
+
+
+@db_cmd.command("source")
+@click.option("--database", required=True, type=click.Path(exists=True),
+              help="SQLite database path")
+@click.option("--source-id", required=True, type=int, help="Lookup source id")
+@click.option("--format", "output_format", default="table", show_default=True,
+              type=click.Choice(["table", "csv", "json"]),
+              help="Output format")
+def db_source_cmd(database, source_id, output_format):
+    """Show details for one lookup source."""
+    try:
+        row = source_details(database, source_id)
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
+    fieldnames = [
+        "id", "species", "assembly", "manifest_name", "manifest_path",
+        "manifest_sha256", "reference_name", "reference_path",
+        "reference_sha256", "lookup_path", "lookup_sha256", "imported_at",
+        "tool_version", "notes", "marker_rules", "import_warnings",
+    ]
+    _echo_rows([row], fieldnames, output_format)
+
+
+@db_cmd.command("remove-source")
+@click.option("--database", required=True, type=click.Path(exists=True),
+              help="SQLite database path")
+@click.option("--source-id", required=False, type=int, help="Lookup source id")
+@click.option("--species", required=False, help="Species name")
+@click.option("--assembly", required=False, help="Reference assembly name")
+@click.option("--manifest-name", required=False, help="Manifest or panel name")
+@click.option("--yes", is_flag=True,
+              help="Confirm removal")
+def db_remove_source_cmd(database, source_id, species, assembly, manifest_name, yes):
+    """Remove lookup source(s) and their marker rules."""
+    if not yes:
+        raise click.UsageError("Refusing to remove a source without --yes.")
+    try:
+        stats = remove_source(
+            database,
+            source_id=source_id,
+            species=species,
+            assembly=assembly,
+            manifest_name=manifest_name,
+        )
+    except ValueError as exc:
+        raise click.UsageError(str(exc)) from exc
+    click.echo(
+        f"Removed {stats.sources_removed} lookup source(s) and "
+        f"{stats.marker_rules_removed} marker rule(s)."
+    )
+
+
+@db_cmd.command("warnings")
+@click.option("--database", required=True, type=click.Path(exists=True),
+              help="SQLite database path")
+@click.option("--source-id", required=False, type=int, help="Filter to one source id")
+@click.option("--format", "output_format", default="table", show_default=True,
+              type=click.Choice(["table", "csv", "json"]),
+              help="Output format")
+def db_warnings_cmd(database, source_id, output_format):
+    """List import warnings recorded in the database."""
+    rows = list_import_warnings(database, source_id=source_id)
+    fieldnames = [
+        "id", "source_id", "species", "assembly", "manifest_name",
+        "warning_type", "marker_name", "row_count", "message",
+    ]
+    _echo_rows(rows, fieldnames, output_format)
+
+
+@db_cmd.command("duplicates")
+@click.option("--database", required=True, type=click.Path(exists=True),
+              help="SQLite database path")
+@click.option("--species", required=False, help="Species name")
+@click.option("--assembly", required=False, help="Reference assembly name")
+@click.option("--limit", required=False, type=int, help="Maximum rows to print")
+@click.option("--format", "output_format", default="table", show_default=True,
+              type=click.Choice(["table", "csv", "json"]),
+              help="Output format")
+def db_duplicates_cmd(database, species, assembly, limit, output_format):
+    """Report marker names that occur in multiple lookup sources."""
+    rows = duplicate_marker_report(
+        database,
+        species=species,
+        assembly=assembly,
+        limit=limit,
+    )
+    fieldnames = [
+        "species", "assembly", "marker_name", "rule_count",
+        "source_count", "manifest_names",
+    ]
+    _echo_rows(rows, fieldnames, output_format)
+
+
+@db_cmd.command("unresolved")
+@click.option("--database", required=True, type=click.Path(exists=True),
+              help="SQLite database path")
+@click.option("--species", required=False, help="Species name")
+@click.option("--assembly", required=False, help="Reference assembly name")
+@click.option("--manifest-name", required=False, help="Manifest or panel name")
+@click.option("--limit", required=False, type=int, help="Maximum rows to print")
+@click.option("--format", "output_format", default="table", show_default=True,
+              type=click.Choice(["table", "csv", "json"]),
+              help="Output format")
+def db_unresolved_cmd(database, species, assembly, manifest_name, limit, output_format):
+    """List marker rules without a positioned chromosome/base coordinate."""
+    rows = unresolved_marker_report(
+        database,
+        species=species,
+        assembly=assembly,
+        manifest_name=manifest_name,
+        limit=limit,
+    )
+    fieldnames = [
+        "source_id", "species", "assembly", "manifest_name",
+        "marker_name", "determination_type", "chromosome", "position",
+    ]
+    _echo_rows(rows, fieldnames, output_format)
+
+
+@db_cmd.command("validate")
+@click.option("--database", required=True, type=click.Path(exists=True),
+              help="SQLite database path")
+@click.option("--format", "output_format", default="table", show_default=True,
+              type=click.Choice(["table", "csv", "json"]),
+              help="Output format")
+def db_validate_cmd(database, output_format):
+    """Validate database integrity and common maintenance risks."""
+    result = validate_database(database)
+    fieldnames = ["check", "status", "count", "details"]
+    _echo_rows(result.checks, fieldnames, output_format)
+    if output_format == "table":
+        click.echo(f"Overall status: {result.status}")
+    if result.status == "fail":
+        raise click.ClickException("Database validation failed.")
+
+
+@db_cmd.command("vacuum")
+@click.option("--database", required=True, type=click.Path(exists=True),
+              help="SQLite database path")
+def db_vacuum_cmd(database):
+    """Reclaim free space in the SQLite database after deletes."""
+    vacuum_database(database)
+    click.echo(f"Vacuumed database: {database}")
 
 
 @main.command("convert")

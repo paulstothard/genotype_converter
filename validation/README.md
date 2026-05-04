@@ -27,6 +27,8 @@ validation/
     generated files from genotype-converter build
   reports/
     comparison notes and diff summaries
+  plink_comparison/
+    collaborator PLINK comparison workspace
 ```
 
 ## Required Files
@@ -147,6 +149,13 @@ validation/reports/comparison_summary.md
 validation/reports/position_mismatches.csv
 validation/reports/conversion_mismatches.csv
 ```
+
+## PLINK Collaborator Comparisons
+
+Use `validation/plink_comparison/` when comparing a collaborator's converted
+PLINK files against output from this converter. That workspace keeps real PLINK
+inputs, generated outputs, and reports ignored by Git while tracking the helper
+scripts and README.
 
 ## Notes
 

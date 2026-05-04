@@ -375,6 +375,19 @@ identical duplicate rows are collapsed. Conflicting duplicates from the same
 source are skipped during import because marker-name conversion cannot choose
 between them safely; the import command reports the skipped marker IDs.
 
+Common maintenance commands:
+
+```bash
+genotype-converter db stats --database genotype_converter.sqlite
+genotype-converter db validate --database genotype_converter.sqlite
+genotype-converter db warnings --database genotype_converter.sqlite
+genotype-converter db remove-source --database genotype_converter.sqlite --source-id 12 --yes
+genotype-converter db vacuum --database genotype_converter.sqlite
+```
+
+Use `db import-lookup --replace-context` or `db build --replace-context` when
+refreshing a manifest/assembly source after rebuilding lookup files.
+
 To inspect a proposed source folder without running a build:
 
 ```bash

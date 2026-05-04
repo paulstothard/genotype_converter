@@ -8,15 +8,22 @@ import pytest
 
 from genotype_converter.database import (
     LOOKUP_COLUMNS,
+    database_stats,
     discover_source_folders,
+    duplicate_marker_report,
     infer_lookup_source_for_markers,
     import_lookup,
     init_database,
+    list_import_warnings,
     list_assemblies,
     list_manifests,
     list_species,
     load_lookup_table_from_database,
     query_marker,
+    remove_source,
+    source_details,
+    unresolved_marker_report,
+    validate_database,
 )
 
 
@@ -272,6 +279,33 @@ def test_import_lookup_requires_replace_for_same_source(pipeline_output, tmp_pat
     assert rule_count == 8
 
 
+def test_import_lookup_replace_context_removes_stale_sources(pipeline_output, tmp_path):
+    db_path = tmp_path / "conversion.sqlite"
+    lookup = pipeline_output / "manifest.reference.lookup.csv"
+    modified_lookup = tmp_path / "modified.lookup.csv"
+    modified_lookup.write_text(
+        lookup.read_text().replace("SNP1-0_T_F_1511658221", "SNP1-alt", 1)
+    )
+    kwargs = {
+        "database_path": str(db_path),
+        "species": "bos_taurus",
+        "assembly": "ARS_UCD_v2_0",
+        "manifest_name": "tiny_manifest",
+    }
+
+    import_lookup(lookup_path=str(lookup), **kwargs)
+    import_lookup(lookup_path=str(modified_lookup), **kwargs)
+    stats = import_lookup(
+        lookup_path=str(lookup),
+        replace_context=True,
+        **kwargs,
+    )
+
+    assert stats.rows_replaced == 2
+    assert len(list_manifests(str(db_path))) == 1
+    assert database_stats(str(db_path))["marker_rules"] == 8
+
+
 def test_import_lookup_collapses_identical_duplicate_marker_rows(tmp_path):
     db_path = tmp_path / "conversion.sqlite"
     lookup = tmp_path / "duplicate_identical.lookup.csv"
@@ -357,6 +391,142 @@ def test_import_lookup_skips_conflicting_duplicate_marker_rows(tmp_path):
         assembly="ARS_UCD_v2_0",
         marker_name="UNIQUE1",
     )) == 1
+
+    warnings = list_import_warnings(str(db_path))
+    assert len(warnings) == 1
+    assert warnings[0]["warning_type"] == "conflicting_duplicate_marker"
+    assert warnings[0]["marker_name"] == "DUP1"
+
+
+def test_database_stats_source_details_and_validation(pipeline_output, tmp_path):
+    db_path = tmp_path / "conversion.sqlite"
+    lookup = pipeline_output / "manifest.reference.lookup.csv"
+    stats = import_lookup(
+        database_path=str(db_path),
+        lookup_path=str(lookup),
+        species="bos_taurus",
+        assembly="ARS_UCD_v2_0",
+        manifest_name="tiny_manifest",
+    )
+
+    db_stats = database_stats(str(db_path))
+    assert db_stats["lookup_sources"] == 1
+    assert db_stats["marker_rules"] == 8
+    assert db_stats["species"] == 1
+    assert db_stats["assemblies"] == 1
+
+    details = source_details(str(db_path), stats.source_id)
+    assert details["manifest_name"] == "tiny_manifest"
+    assert details["marker_rules"] == 8
+
+    validation = validate_database(str(db_path))
+    assert validation.status == "pass"
+    assert {row["check"] for row in validation.checks} >= {
+        "sqlite_integrity",
+        "foreign_keys",
+        "duplicate_source_contexts",
+        "duplicate_rules_within_source",
+    }
+
+
+def test_remove_source_deletes_rules_and_warnings(tmp_path):
+    db_path = tmp_path / "conversion.sqlite"
+    lookup = tmp_path / "duplicate_conflict.lookup.csv"
+    _write_lookup_rows(
+        lookup,
+        [
+            {"marker_name": "DUP1", "position": "10"},
+            {"marker_name": "DUP1", "position": "20"},
+            {"marker_name": "UNIQUE1", "position": "30"},
+        ],
+    )
+    stats = import_lookup(
+        database_path=str(db_path),
+        lookup_path=str(lookup),
+        species="bos_taurus",
+        assembly="ARS_UCD_v2_0",
+        manifest_name="duplicate_panel",
+    )
+
+    removed = remove_source(str(db_path), source_id=stats.source_id)
+
+    assert removed.sources_removed == 1
+    assert removed.marker_rules_removed == 1
+    assert database_stats(str(db_path))["lookup_sources"] == 0
+    assert list_import_warnings(str(db_path)) == []
+
+
+def test_remove_source_by_context_removes_multiple_stale_sources(pipeline_output, tmp_path):
+    db_path = tmp_path / "conversion.sqlite"
+    lookup = pipeline_output / "manifest.reference.lookup.csv"
+    modified_lookup = tmp_path / "modified.lookup.csv"
+    modified_lookup.write_text(
+        lookup.read_text().replace("SNP1-0_T_F_1511658221", "SNP1-alt", 1)
+    )
+    import_lookup(
+        database_path=str(db_path),
+        lookup_path=str(lookup),
+        species="bos_taurus",
+        assembly="ARS_UCD_v2_0",
+        manifest_name="tiny_manifest",
+    )
+    import_lookup(
+        database_path=str(db_path),
+        lookup_path=str(modified_lookup),
+        species="bos_taurus",
+        assembly="ARS_UCD_v2_0",
+        manifest_name="tiny_manifest",
+    )
+
+    removed = remove_source(
+        str(db_path),
+        species="bos_taurus",
+        assembly="ARS_UCD_v2_0",
+        manifest_name="tiny_manifest",
+    )
+
+    assert removed.sources_removed == 2
+    assert removed.marker_rules_removed == 16
+    assert list_manifests(str(db_path)) == []
+
+
+def test_duplicate_and_unresolved_reports(pipeline_output, tmp_path):
+    db_path = tmp_path / "conversion.sqlite"
+    lookup = pipeline_output / "manifest.reference.lookup.csv"
+    import_lookup(
+        database_path=str(db_path),
+        lookup_path=str(lookup),
+        species="bos_taurus",
+        assembly="ARS_UCD_v2_0",
+        manifest_name="manifest_a",
+    )
+    import_lookup(
+        database_path=str(db_path),
+        lookup_path=str(lookup),
+        species="bos_taurus",
+        assembly="ARS_UCD_v2_0",
+        manifest_name="manifest_b",
+    )
+
+    duplicates = duplicate_marker_report(str(db_path), limit=1)
+    assert duplicates[0]["source_count"] == 2
+    assert "manifest_a" in duplicates[0]["manifest_names"]
+    assert "manifest_b" in duplicates[0]["manifest_names"]
+
+    unresolved_lookup = tmp_path / "unresolved.lookup.csv"
+    _write_lookup_rows(
+        unresolved_lookup,
+        [{"marker_name": "NO_POS", "A_in_TOP": "A", "B_in_TOP": "C"}],
+    )
+    import_lookup(
+        database_path=str(db_path),
+        lookup_path=str(unresolved_lookup),
+        species="bos_taurus",
+        assembly="ARS_UCD_v2_0",
+        manifest_name="unresolved_panel",
+    )
+    unresolved = unresolved_marker_report(str(db_path), manifest_name="unresolved_panel")
+    assert [row["marker_name"] for row in unresolved] == ["NO_POS"]
 
 
 def test_database_source_fixture_contains_expected_layout():

@@ -3,9 +3,9 @@
 The SQLite database is optional. The normal lookup-file workflow remains
 supported and does not require a database.
 
-Current database support covers import, inspection, source-folder discovery, CSV
-genotype conversion, PLINK 1 conversion, PLINK 2 conversion, and batch
-conversion for those same genotype layouts.
+Current database support covers import, inspection, source-folder discovery,
+maintenance, validation, CSV genotype conversion, PLINK 1 conversion, PLINK 2
+conversion, and batch conversion for those same genotype layouts.
 
 ## Install Notes
 
@@ -39,6 +39,12 @@ DESIGN, PLUS, and VCF notation.
 Marker names are unique only within one `lookup_sources` row. Querying a marker
 without a manifest filter can return multiple rules.
 
+### `import_warnings`
+
+One row records an import warning tied to a lookup source. For example, if a
+single lookup source contains conflicting duplicate marker names, those marker
+names are skipped and recorded here for later inspection.
+
 ## Commands
 
 ```bash
@@ -54,6 +60,11 @@ genotype-converter db import-lookup \
   --manifest-name bovinehd_manifest_b
 ```
 
+Use `--replace-context` when refreshing a source after rebuilding a lookup CSV.
+It replaces existing imports with the same species, assembly, and manifest name
+even if the lookup checksum changed. Use plain `--replace` only when refreshing
+an import with the same lookup checksum.
+
 ```bash
 genotype-converter db marker \
   --database genotype_converter.sqlite \
@@ -64,6 +75,81 @@ genotype-converter db marker \
 ```
 
 `db marker` supports `--format table`, `--format csv`, and `--format json`.
+
+## Maintenance Commands
+
+Summarize a database:
+
+```bash
+genotype-converter db stats --database genotype_converter.sqlite
+```
+
+Show one lookup source:
+
+```bash
+genotype-converter db source \
+  --database genotype_converter.sqlite \
+  --source-id 12
+```
+
+List import warnings, such as skipped conflicting duplicate marker names:
+
+```bash
+genotype-converter db warnings --database genotype_converter.sqlite
+```
+
+Report marker names that occur in more than one imported source:
+
+```bash
+genotype-converter db duplicates \
+  --database genotype_converter.sqlite \
+  --species bos_taurus \
+  --assembly ARS_UCD_v2_0 \
+  --limit 50
+```
+
+Report marker rules without chromosome/base coordinates:
+
+```bash
+genotype-converter db unresolved \
+  --database genotype_converter.sqlite \
+  --species bos_taurus \
+  --assembly ARS_UCD_v2_0 \
+  --limit 50
+```
+
+Validate SQLite integrity, foreign keys, duplicate source contexts, duplicate
+same-source marker rules, empty sources, and import warnings:
+
+```bash
+genotype-converter db validate --database genotype_converter.sqlite
+```
+
+Remove stale sources by id:
+
+```bash
+genotype-converter db remove-source \
+  --database genotype_converter.sqlite \
+  --source-id 12 \
+  --yes
+```
+
+Or remove all sources with the same species, assembly, and manifest name:
+
+```bash
+genotype-converter db remove-source \
+  --database genotype_converter.sqlite \
+  --species bos_taurus \
+  --assembly ARS_UCD_v2_0 \
+  --manifest-name bovinehd_manifest_b \
+  --yes
+```
+
+After large deletes, reclaim free space:
+
+```bash
+genotype-converter db vacuum --database genotype_converter.sqlite
+```
 
 ## Conversion
 
