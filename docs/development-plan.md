@@ -1,29 +1,31 @@
 # Development Plan
 
-This file records larger design ideas that should be preserved while the code
-evolves. It is not a release promise; items here still need detailed design,
-tests, and migration planning before implementation.
+This file records repo-level design status and remaining work. It is not a
+release promise. User-facing usage details belong in `README.md`,
+`docs/database.md`, and `docs/genotype-formats.md`.
 
-## SQLite Conversion Database
+## Current Status
 
-Add an optional SQLite-backed conversion database that can store SNP and indel
-conversion information across many manifests, species, and assemblies.
+The core workflows are implemented:
 
-### Goals
+- Build lookup, position, conversion, and wide-format outputs from Illumina or
+  Affymetrix manifests and a reference FASTA.
+- Convert genotype datasets from lookup CSVs.
+- Build and inspect SQLite conversion databases from species folders containing
+  manifests and reference genomes.
+- Convert genotype datasets from SQLite databases.
+- Convert individual files and folders for CSV wide, CSV long,
+  Illumina/GSGT, Affymetrix/Axiom, PLINK 1 binary, and PLINK 2 pfile inputs.
+- Exclude unconvertible markers by default and write marker-level reports.
+- Resolve mixed-manifest inputs with marker-resolution reports.
 
-- Let users convert genotype files by marker name without manually selecting a
-  single lookup CSV for every run.
-- Support multiple species and reference assemblies.
-- Support multiple manifests per species, with conversion records generated for
-  each manifest/reference pair.
-- Preserve marker provenance so the same marker name can appear in more than
-  one manifest without losing which rule came from which source.
-- Handle SNPs and indels consistently.
-- Allow conversion of one genotype file or whole folders of genotype files.
+The database workflow is optional. Lookup CSV workflows remain supported and
+should stay supported because they are simple, inspectable, easy to archive, and
+useful for validation against older outputs.
 
-### Proposed Workflow
+## Database Source Layout
 
-Use a structured data folder such as:
+The supported source-folder layout is:
 
 ```text
 database_sources/
@@ -36,280 +38,109 @@ database_sources/
         ARS_UCD_v2.0.fa
       ARS_UCD1_2/
         ARS-UCD1.2.fa
+    genotypes/
+      optional-local-examples
 ```
 
-The database builder would scan this folder, run or reuse `build` outputs for
-each manifest/reference pair within a species, and load the resulting
-conversion records into an SQLite database.
+Manifests are independent of reference genomes. For each species, the database
+builder pairs each manifest with each reference assembly under that species.
+Each `references/<assembly>/` folder should contain exactly one FASTA.
 
-Possible commands:
-
-```bash
-genotype-converter db init --database genotype_converter.sqlite
-
-genotype-converter db build \
-  --source-root database_sources \
-  --database genotype_converter.sqlite \
-  --build-outdir database_build \
-  --workers 1
-
-genotype-converter db import-lookup \
-  --database genotype_converter.sqlite \
-  --lookup manifest.reference.lookup.csv \
-  --species bos_taurus \
-  --assembly ARS_UCD_v2_0 \
-  --manifest-name bovinehd_manifest_b
-
-genotype-converter db list-species --database genotype_converter.sqlite
-genotype-converter db list-assemblies --database genotype_converter.sqlite --species bos_taurus
-genotype-converter db list-manifests --database genotype_converter.sqlite --species bos_taurus
-
-genotype-converter convert \
-  --genotypes input.csv \
-  --database genotype_converter.sqlite \
-  --species bos_taurus \
-  --assembly ARS_UCD_v2_0 \
-  --from-format TOP \
-  --to-format PLUS \
-  --output converted.csv
-```
-
-The exact command names can change, but the database should have clear
-maintenance operations: initialize, build/update, inspect/list, validate, and
-possibly remove stale manifest entries.
-
-Stage 1 is implemented for existing lookup files:
-
-- initialize a SQLite database
-- import a built lookup CSV with species, assembly, and manifest provenance
-- list species, assemblies, and imported manifests
-- query rules for a marker
-- export marker query results as table, CSV, or JSON
-- discover source-folder contents without running build
-- build and import source folders with species-level manifests and one reference
-  FASTA per `references/<assembly>/` folder
-
-Stage 2 has database conversion:
-
-- `genotype-converter convert` can use `--database` instead of `--lookup` for
-  single CSV files and CSV folders
-- `genotype-converter convert-plink` can use `--database` instead of `--lookup`
-  for single PLINK 1 filesets and PLINK 1 folders
-- `genotype-converter convert-pfile` can use `--database` instead of `--lookup`
-  for single PLINK 2 filesets and PLINK 2 folders
-- `--species` and `--assembly` are required in database mode
-- `--manifest-name` can be supplied explicitly, or omitted to use conservative
-  marker-count manifest inference
-
-Current inference uses all input marker IDs and chooses the imported manifest
-with the most matches. It fails on no-match and tied-best cases. More nuanced
-neighbor-window inference from input marker order is available through
-`--resolve-mixed-manifests`.
-
-### Duplicate Marker Names
+## Duplicate Marker Names
 
 The same marker name can appear in multiple manifests with different conversion
-rules. The database should not collapse those records into one unqualified rule.
-The current schema retains:
+rules. The database must not collapse those records into one unqualified rule.
 
-- marker name
+The schema retains:
+
+- marker name and alternate marker name
 - manifest/panel name
-- species
-- assembly/reference
+- species and assembly/reference
 - chromosome and position
 - REF/ALT
 - AB/TOP/FORWARD/DESIGN/PLUS/VCF conversion values
 - determination type
 - source file checksums
-- build timestamp and tool version
+- import/build metadata
 
 Marker names are unique only within one imported lookup source. Querying a
-marker without `--manifest-name` may return multiple rows, one per manifest.
+marker without `--manifest-name` can return multiple rows, one per source.
 
-When a genotype file contains duplicate-rule markers and the user has not
-specified a manifest, mixed-manifest mode can infer the most likely manifest
-context from nearby markers in the input order. The implemented heuristic:
+## Manifest Resolution
 
-1. For each ambiguous marker, look at a window of neighboring input markers.
-2. Count which manifest provides rules for the most neighboring markers.
-3. Prefer the rule from that manifest if it is clearly ahead.
-4. If no manifest is clearly ahead, report the marker as ambiguous and leave it
-   unconverted or require an explicit user choice.
+Database-backed conversion supports three modes:
 
-This heuristic is conservative and explainable. The converter reports which rule
-was selected and why in a marker-resolution CSV, especially when multiple
-manifest rules exist.
+- Explicit source selection with `--manifest-name`.
+- Whole-input manifest inference when `--manifest-name` is omitted.
+- Per-marker mixed-manifest resolution with `--resolve-mixed-manifests`.
 
-### Should Existing Outputs Stay?
+Whole-input inference uses all input marker IDs and chooses the imported
+manifest with the most matches. It fails on no-match and tied-best cases.
 
-Yes. Keep the current CSV/parquet outputs.
+Mixed-manifest mode resolves one marker at a time. For an ambiguous marker, it
+looks at neighboring input markers, counts which manifest provides rules for
+those neighbors, and selects the clearly supported rule. If no manifest is
+clearly ahead, the marker is reported as ambiguous and handled according to
+`--on-ambiguous-marker`.
 
-Reasons:
+This heuristic should remain conservative and explainable. The
+marker-resolution CSV is part of the workflow and should stay machine-readable.
 
-- They are simple, inspectable, and easy to archive with publications or
-  analyses.
-- They are useful for debugging and validation against older pipelines.
-- They let users run `convert` without adopting a database workflow.
-- They provide a stable interchange format that can also be imported into the
-  database.
+## Unconvertible Marker Policy
 
-The database should be optional, not required. The existing lookup-file workflow
-should remain supported:
-
-```bash
-genotype-converter convert --lookup manifest.reference.lookup.csv ...
-```
-
-Database-backed conversion should be an additional path for users who manage
-many species, assemblies, manifests, or genotype batches.
-
-### Batch Conversion
-
-Batch conversion is now supported for CSV wide, CSV long, PLINK 1 binary
-filesets, and PLINK 2 filesets. Batch conversion can use either a lookup CSV or
-an explicit database context.
-
-Lookup-file command shape:
-
-```bash
-genotype-converter convert \
-  --genotypes-dir genotypes/ \
-  --pattern "*.csv" \
-  --lookup manifest.reference.lookup.csv \
-  --from-format TOP \
-  --to-format PLUS \
-  --outdir converted/
-```
-
-```bash
-genotype-converter convert-plink \
-  --bfile-dir plink_files/ \
-  --pattern "*.bed" \
-  --lookup manifest.reference.lookup.csv \
-  --from-format TOP \
-  --to-format PLUS \
-  --outdir converted/
-```
-
-```bash
-genotype-converter convert-pfile \
-  --pfile-dir pfiles/ \
-  --pattern "*.pgen" \
-  --lookup manifest.reference.lookup.csv \
-  --from-format TOP \
-  --to-format PLUS \
-  --outdir converted/
-```
-
-Database-backed command shape:
-
-```bash
-genotype-converter convert \
-  --genotypes-dir genotypes/ \
-  --pattern "*.csv" \
-  --database genotype_converter.sqlite \
-  --species bos_taurus \
-  --assembly ARS_UCD_v2_0 \
-  --manifest-name bovinehd_manifest_b \
-  --from-format TOP \
-  --to-format PLUS \
-  --outdir converted/
-```
-
-```bash
-genotype-converter convert-plink \
-  --bfile-dir plink_files/ \
-  --pattern "*.bed" \
-  --database genotype_converter.sqlite \
-  --species bos_taurus \
-  --assembly ARS_UCD_v2_0 \
-  --manifest-name bovinehd_manifest_b \
-  --from-format TOP \
-  --to-format PLUS \
-  --outdir converted/
-```
-
-```bash
-genotype-converter convert-pfile \
-  --pfile-dir pfiles/ \
-  --pattern "*.pgen" \
-  --database genotype_converter.sqlite \
-  --species bos_taurus \
-  --assembly ARS_UCD_v2_0 \
-  --manifest-name bovinehd_manifest_b \
-  --from-format TOP \
-  --to-format PLUS \
-  --outdir converted/
-```
-
-Batch conversion does:
-
-- preserve filenames or use a predictable suffix
-- avoid overwriting outputs unless explicitly requested
-- write `conversion_summary.csv` for each batch
-
-Batch conversion still needs to:
-
-- report missing, ambiguous, and unconverted markers per file
-- refine mixed-manifest reports so batch outputs can also include per-file
-  resolution summaries
-
-### Post-v0.1.1 Planning Notes
-
-The v0.1.1 release covers the core database conversion workflow:
-
-- database initialization, source-folder build/import, lookup import, and query
-- CSV, PLINK 1, and PLINK 2 conversion from lookup CSVs or SQLite
-- whole-input manifest inference when `--manifest-name` is omitted
-- per-marker mixed-manifest resolution with marker-resolution reports
-- ambiguity handling with fail or skip behavior
-- a runnable mixed-manifest example under `examples/mixed_manifests/`
-
-Future work to preserve:
-
-- Expand database maintenance reports if real use shows additional stale-source
-  patterns. The current commands cover source removal, context replacement,
-  validation, warnings, duplicate marker reports, unresolved marker reports,
-  stats, and vacuum.
-- Improve batch reports with per-file mixed-manifest summaries in addition to
-  the global marker-resolution report.
-- Record a short bovine validation status note after the next full validation
-  run, including command, date, code version, and remaining discrepancy counts.
-- Decide whether distribution remains GitHub/source-install only or should add
-  package publishing.
-- Refine nearby-marker/window scoring only if real mixed-manifest data shows
-  the current conservative heuristic is too simple.
-
-### Database Test Fixture
-
-The repository includes a tiny source-folder fixture at
-`tests/data/database_sources/`. It is intended for future SQLite database tests
-and mirrors the proposed user-facing folder organization:
+`convert`, `convert-plink`, and `convert-pfile` all use:
 
 ```text
-tests/data/database_sources/
-  bos_taurus/
-    manifests/
-    references/
-      ARS_UCD_v2_0/
-      ARS_UCD1_2/
-    genotypes/
-    expected/
+--on-unconvertible-marker exclude|fail|keep
 ```
 
-Future database code should first prove that it can discover and build from this
-small fixture. Do not use the full bovine validation panel as the first database
-test target.
+The default is `exclude`.
 
-### Design Questions To Resolve
+- Text formats remove unconvertible marker columns or rows.
+- PLINK 1 uses PLINK to remove variants before rewriting `.bim`, so
+  `.bed/.bim/.fam` stay synchronized.
+- PLINK 2 uses PLINK2 to remove variants before rewriting `.pvar`, so
+  `.pgen/.pvar/.psam` stay synchronized.
 
-- Exact SQLite schema and indexes.
-- Whether to store all old-style output rows directly or normalize into marker,
-  manifest, assembly, and conversion-rule tables.
-- How to version database records when the build algorithm changes.
-- How users should choose species/assembly interactively versus by command-line
-  flags.
-- How to handle marker aliases and alternate marker names.
-- How to expose ambiguity reports in a machine-readable form.
-- Whether database building should require reference FASTA files every time or
-  can import already-built lookup files.
+Do not manually drop variants from PLINK metadata files without also rewriting
+the matching genotype file.
+
+## Validation Workflows
+
+Keep helper scripts in `validation/` and use them instead of reconstructing long
+commands by hand.
+
+Important validation paths:
+
+- `validation/scripts/` for full BovineHD old/new validation.
+- `validation/mixed_manifest/scripts/` for mixed-manifest database validation.
+- `validation/plink_comparison/scripts/` for collaborator PLINK comparisons.
+
+Large validation inputs, generated databases, references, reports, and converted
+outputs should remain ignored by Git.
+
+The mixed-manifest reference downloader intentionally keeps assembled molecules,
+unlocalized scaffolds, and unplaced scaffolds from NCBI RefSeq assembly reports.
+That keeps validation comparable with older outputs that may include unassigned
+contig placements.
+
+## Remaining Work
+
+- Add a short validation status note after each substantial full-panel
+  validation run, including command, date, code version, reference used, and
+  remaining discrepancy counts.
+- Improve batch mixed-manifest reports if real use shows that the global
+  marker-resolution report is not enough for multi-file review.
+- Refine nearby-marker/window scoring only if real mixed-manifest data shows the
+  current conservative heuristic is too simple.
+- Decide whether distribution should remain GitHub/source-install only or later
+  add package publishing.
+- Consider generating real tiny PLINK 2 pfiles for validation if PLINK2 becomes
+  reliably available in the development environment.
+
+## Agent Notes
+
+Keep `AGENTS.md` in the repository. It is not user-facing documentation; it is a
+repo-local operating guide for AI coding agents. It records validation safety
+rules, large-file handling, and probe-positioning details that are easy to lose
+between sessions.
