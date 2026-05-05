@@ -1,20 +1,38 @@
 # genotype_converter
 
-Convert Illumina and Affymetrix SNP chip manifests to standardised format tables,
-then re-encode genotype data files between any supported format encodings.
+`genotype_converter` builds SNP and small-indel conversion rules from genotyping
+array manifests and reference genomes, then uses those rules to convert genotype
+datasets between common allele encodings.
+
+It can be used in two ways:
+
+- Build lookup/position/conversion CSV files for one manifest and one reference
+  genome.
+- Build a reusable SQLite database from folders of manifests and reference
+  genomes, then convert individual genotype files or whole folders of genotype
+  files.
+
+The converter supports Illumina and Affymetrix manifest inputs and can convert
+CSV, Illumina/GSGT, Affymetrix/Axiom, PLINK 1 binary, and PLINK 2 pfile genotype
+datasets. It reports markers that cannot be converted and excludes them by
+default so genotype outputs do not keep likely-wrong allele calls.
 
 ---
 
 ## Overview
 
-**`build`** — takes a SNP chip manifest and a reference genome FASTA, aligns each
-variant's flanking sequence to the reference using minimap2, and writes a set of
-output files that record the chromosomal position and allele encoding for every
-variant.
+**`build`** — takes a SNP chip manifest and a reference genome FASTA, aligns
+variant flanking sequence to the reference using minimap2, and writes lookup,
+position, conversion, and wide-format files.
 
 **`convert`** — takes a genotype data file and the lookup table produced by `build`,
 and rewrites the allele calls from one encoding to another (for example, Illumina
 TOP format to the genomic PLUS format used by GWAS pipelines).
+
+**`db`** — creates, inspects, and builds SQLite conversion databases from local
+species folders containing manifests and reference genomes. Database-backed
+conversion can resolve mixed-manifest genotype inputs when marker names appear in
+more than one manifest.
 
 ---
 
@@ -53,9 +71,9 @@ conda activate genotype-converter-env
 genotype-converter --help
 ```
 
-The conda environment includes PLINK 1 for `convert-plink` exclusion of
-unconvertible variants. PLINK 2 may need to be installed separately on platforms
-where Bioconda does not provide an `osx-arm64` package; pass its path with
+The conda environment installs PLINK 1 (`plink`). It does not install PLINK 2
+(`plink2`). For PLINK 2 pfile conversion, install PLINK 2 separately when
+unconvertible variants may need to be excluded, then pass the executable with
 `convert-pfile --plink2 /path/to/plink2`.
 
 ### Option B — pip + venv
