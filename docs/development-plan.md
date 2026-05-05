@@ -137,6 +137,15 @@ contig placements.
   add package publishing.
 - Consider generating real tiny PLINK 2 pfiles for validation if PLINK2 becomes
   reliably available in the development environment.
+- Consider adding actual-allele genotype table output as a separate target from
+  the current symbolic `VCF` encoding. The current `VCF` target reports alleles
+  as `REF` and `ALT`; an actual-allele output mode would write bases/allele
+  strings such as `A/G`.
+- Consider full VCF export as a distinct feature. Proper VCF output would need
+  records with `CHROM`, `POS`, `ID`, `REF`, `ALT`, `FORMAT`, and sample columns,
+  plus correct genotype indexes. Multi-ALT records are needed when both assayed
+  chip alleles are non-reference, for example `REF=C`, `ALT=A,G`, and genotypes
+  such as `1/2`.
 
 ## Agent Notes
 
