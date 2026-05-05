@@ -297,7 +297,12 @@ def write_affymetrix_axiom_dual_call_matrix(path: Path, markers: list[Occurrence
 
 
 def write_plink1(prefix: Path, markers: list[Occurrence]) -> None:
-    prefix.with_suffix(".bed").write_bytes(b"synthetic validation placeholder\n")
+    sample_count = 3
+    bytes_per_variant = (sample_count + 3) // 4
+    # SNP-major PLINK .bed with every sample set to missing for every variant.
+    prefix.with_suffix(".bed").write_bytes(
+        bytes([0x6C, 0x1B, 0x01]) + (b"\x55" * bytes_per_variant * len(markers))
+    )
     prefix.with_suffix(".fam").write_text(
         "\n".join(
             [

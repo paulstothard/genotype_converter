@@ -52,5 +52,5 @@ def test_compare_plink_bim_classifies_allele_relationships(tmp_path):
     assert rows["complement"]["status"] == "complement"
     assert rows["mismatch"]["status"] == "mismatch"
     assert rows["mismatch"]["position_status"] == "different"
-    assert rows["missing"]["status"] == "missing_in_actual"
-    assert rows["extra"]["status"] == "extra_in_actual"
+    assert rows["missing"]["status"] == "missing_from_genotype_converter_plus"
+    assert rows["extra"]["status"] == "extra_in_genotype_converter_plus"

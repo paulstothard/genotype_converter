@@ -47,7 +47,7 @@ def download(url: str, path: Path) -> None:
         shutil.copyfileobj(response, handle)
 
 
-def assembled_molecule_accessions(report_path: Path) -> set[str]:
+def selected_sequence_accessions(report_path: Path) -> set[str]:
     accessions: set[str] = set()
     with report_path.open() as handle:
         for line in handle:
@@ -59,12 +59,16 @@ def assembled_molecule_accessions(report_path: Path) -> set[str]:
             sequence_role = fields[1]
             genbank_accession = fields[4]
             refseq_accession = fields[6]
-            if sequence_role == "assembled-molecule":
+            if sequence_role in {
+                "assembled-molecule",
+                "unlocalized-scaffold",
+                "unplaced-scaffold",
+            }:
                 accessions.add(genbank_accession)
                 accessions.add(refseq_accession)
     accessions.discard("na")
     if not accessions:
-        raise RuntimeError(f"No assembled-molecule accessions found in {report_path}")
+        raise RuntimeError(f"No selected sequence accessions found in {report_path}")
     return accessions
 
 
@@ -96,7 +100,7 @@ def main() -> int:
         for reference in REFERENCES:
             dest_dir = SOURCE_ROOT / reference.species / "references" / reference.assembly
             dest_dir.mkdir(parents=True, exist_ok=True)
-            output_path = dest_dir / f"{reference.assembly}.chromosomes.fa"
+            output_path = dest_dir / f"{reference.assembly}.refseq.fa"
             report_path = dest_dir / f"{reference.assembly}.assembly_report.txt"
             fasta_gz = temp_dir / f"{reference.basename}_genomic.fna.gz"
             temp_report = temp_dir / f"{reference.basename}_assembly_report.txt"
@@ -104,11 +108,11 @@ def main() -> int:
             download(f"{reference.ftp_base}/{reference.basename}_assembly_report.txt", temp_report)
             download(f"{reference.ftp_base}/{reference.basename}_genomic.fna.gz", fasta_gz)
             shutil.copyfile(temp_report, report_path)
-            keep = assembled_molecule_accessions(report_path)
+            keep = selected_sequence_accessions(report_path)
             written = filter_fasta_by_accession(fasta_gz, output_path, keep)
             size_gb = output_path.stat().st_size / (1024**3)
             print(
-                f"Wrote {output_path} with {written} assembled molecule(s), "
+                f"Wrote {output_path} with {written} assembled/unassigned sequence(s), "
                 f"{size_gb:.2f} GiB",
                 flush=True,
             )

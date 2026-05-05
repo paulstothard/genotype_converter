@@ -9,15 +9,15 @@ files local; inputs, converted outputs, and reports are ignored by Git.
 validation/plink_comparison/
   input/
     <example>/
-      original.bed
-      original.bim
-      original.fam
-      expected_plus.bed
-      expected_plus.bim
-      expected_plus.fam
+      mike_top.bed
+      mike_top.bim
+      mike_top.fam
+      mike_plus.bed
+      mike_plus.bim
+      mike_plus.fam
       notes.txt
   converted/
-    outputs from this converter
+    genotype_converter PLUS outputs
   reports/
     comparison CSV and Markdown reports
   scripts/
@@ -25,21 +25,22 @@ validation/plink_comparison/
     compare_plink_bim.py
 ```
 
-Record the original allele format and the target reference assembly in
-`notes.txt` or in the report notes. The target is expected to be PLUS on a
-specific reference assembly.
+Record Mike's source allele format and the target reference assembly in
+`notes.txt` or in the report notes.
 
 ## Compare Existing BIM Files
 
 ```bash
 python validation/plink_comparison/scripts/compare_plink_bim.py \
-  --expected validation/plink_comparison/input/mike_example/expected_plus.bim \
-  --actual validation/plink_comparison/converted/mike_example.converted.bim \
+  --mike-top validation/plink_comparison/input/mike_example/mike_top.bim \
+  --mike-plus validation/plink_comparison/input/mike_example/mike_plus.bim \
+  --genotype-converter-plus validation/plink_comparison/converted/mike_example.bim \
   --report-prefix validation/plink_comparison/reports/mike_example
 ```
 
 The report classifies each marker as exact, allele-order swapped, complement,
-swapped-complement, mismatch, missing, or extra.
+swapped-complement, mismatch, missing from genotype_converter PLUS, or extra in
+genotype_converter PLUS.
 
 ## Run Conversion And Compare
 
@@ -47,8 +48,8 @@ With a database:
 
 ```bash
 validation/plink_comparison/scripts/run_plink_comparison.sh \
-  --original-bfile validation/plink_comparison/input/mike_example/original \
-  --expected-bfile validation/plink_comparison/input/mike_example/expected_plus \
+  --mike-top-bfile validation/plink_comparison/input/mike_example/mike_top \
+  --mike-plus-bfile validation/plink_comparison/input/mike_example/mike_plus \
   --out-prefix validation/plink_comparison/converted/mike_example \
   --report-prefix validation/plink_comparison/reports/mike_example \
   --database validation/mixed_manifest/mixed_manifest.sqlite \

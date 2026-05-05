@@ -25,6 +25,7 @@ class CheckResult:
     output_records: int
     resolution_rows: int
     skipped_or_ambiguous: int
+    excluded_records: int
     message: str
 
 
@@ -111,6 +112,38 @@ def resolution_counts(path: Path) -> tuple[int, int]:
     return len(rows), flagged
 
 
+def marker_report_counts(output_path: Path) -> tuple[int, int]:
+    exclude_path = output_path.with_name(output_path.stem + ".exclude_markers.txt")
+    if exclude_path.exists():
+        excluded_markers = {
+            line.strip()
+            for line in exclude_path.read_text().splitlines()
+            if line.strip()
+        }
+        report_path = output_path.with_name(
+            output_path.stem + ".marker_conversion_report.csv"
+        )
+        report_rows = 0
+        if report_path.exists():
+            with report_path.open(newline="") as handle:
+                report_rows = sum(1 for _row in csv.DictReader(handle))
+        return report_rows, len(excluded_markers)
+
+    report_path = output_path.with_name(output_path.stem + ".marker_conversion_report.csv")
+    if not report_path.exists():
+        return 0, 0
+    with report_path.open(newline="") as handle:
+        rows = list(csv.DictReader(handle))
+    excluded = len(
+        {
+            row.get("marker_name", "")
+            for row in rows
+            if row.get("action") == "exclude" and row.get("marker_name")
+        }
+    )
+    return len(rows), excluded
+
+
 def check_one(
     species: str,
     assembly: str,
@@ -120,25 +153,29 @@ def check_one(
     report_path: Path,
     record_counter,
     marker_counter,
+    excluded_record_multiplier: int = 1,
 ) -> CheckResult:
     if not input_path.exists():
-        return CheckResult(species, assembly, format_name, "missing-input", 0, 0, 0, 0, str(input_path))
+        return CheckResult(species, assembly, format_name, "missing-input", 0, 0, 0, 0, 0, str(input_path))
     if not output_path.exists():
-        return CheckResult(species, assembly, format_name, "missing-output", record_counter(input_path), 0, 0, 0, str(output_path))
+        return CheckResult(species, assembly, format_name, "missing-output", record_counter(input_path), 0, 0, 0, 0, str(output_path))
     input_records = record_counter(input_path)
     output_records = record_counter(output_path)
     expected_resolution_rows = marker_counter(input_path)
     resolution_rows, flagged = resolution_counts(report_path)
+    _report_rows, excluded_markers = marker_report_counts(output_path)
+    excluded_records = excluded_markers * excluded_record_multiplier
+    expected_output_records = max(input_records - excluded_records, 0)
     status = (
         "pass"
-        if input_records == output_records
+        if output_records == expected_output_records
         and resolution_rows >= expected_resolution_rows
         and flagged == 0
         else "warn"
     )
     message = ""
-    if input_records != output_records:
-        message = "input/output record counts differ"
+    if output_records != expected_output_records:
+        message = "output count does not match input minus excluded records"
     elif resolution_rows < expected_resolution_rows:
         message = "resolution report has fewer rows than distinct markers"
     elif flagged:
@@ -152,6 +189,7 @@ def check_one(
         output_records,
         resolution_rows,
         flagged,
+        excluded_records,
         message,
     )
 
@@ -173,6 +211,7 @@ def collect_results() -> list[CheckResult]:
         genotype_dir = SOURCE_ROOT / species / "genotypes" / "synthetic_mixed_manifest"
         out_dir = OUT_ROOT / species / assembly
         report_dir = REPORT_ROOT / species / assembly
+        sample_count = 3
         checks = [
             (
                 "csv-wide",
@@ -181,6 +220,7 @@ def collect_results() -> list[CheckResult]:
                 report_dir / "mixed_manifest_wide_resolution.csv",
                 count_csv_records,
                 count_csv_wide_markers,
+                0,
             ),
             (
                 "csv-long",
@@ -189,6 +229,7 @@ def collect_results() -> list[CheckResult]:
                 report_dir / "mixed_manifest_long_resolution.csv",
                 count_csv_records,
                 count_csv_long_markers,
+                sample_count,
             ),
             (
                 "illumina-matrix",
@@ -197,6 +238,7 @@ def collect_results() -> list[CheckResult]:
                 report_dir / "illumina_gsgt_matrix_resolution.csv",
                 count_gsgt_matrix_rows,
                 count_gsgt_matrix_rows,
+                1,
             ),
             (
                 "illumina-long",
@@ -205,6 +247,7 @@ def collect_results() -> list[CheckResult]:
                 report_dir / "illumina_gsgt_long_resolution.csv",
                 count_gsgt_long_rows,
                 count_gsgt_long_markers,
+                sample_count,
             ),
             (
                 "affymetrix-matrix",
@@ -213,6 +256,7 @@ def collect_results() -> list[CheckResult]:
                 report_dir / "affymetrix_axiom_dual_call_matrix_resolution.csv",
                 count_tabular_body_rows,
                 count_tabular_body_rows,
+                1,
             ),
             (
                 "plink1",
@@ -221,6 +265,7 @@ def collect_results() -> list[CheckResult]:
                 report_dir / "mixed_manifest_plink1_resolution.csv",
                 count_plink_bim,
                 count_plink_bim,
+                1,
             ),
             (
                 "plink2",
@@ -229,6 +274,7 @@ def collect_results() -> list[CheckResult]:
                 report_dir / "mixed_manifest_plink2_resolution.csv",
                 count_pvar,
                 count_pvar,
+                1,
             ),
         ]
         for item in checks:
@@ -247,6 +293,7 @@ def write_reports(results: list[CheckResult]) -> None:
         "output_records",
         "resolution_rows",
         "skipped_or_ambiguous",
+        "excluded_records",
         "message",
     ]
     with SUMMARY_CSV.open("w", newline="") as handle:
@@ -263,8 +310,8 @@ def write_reports(results: list[CheckResult]) -> None:
         f"Passed: {len(results) - len(failures)}",
         f"Warnings or failures: {len(failures)}",
         "",
-        "| Species | Assembly | Format | Status | Records | Resolution rows | Skipped/Ambiguous |",
-        "| --- | --- | --- | --- | ---: | ---: | ---: |",
+        "| Species | Assembly | Format | Status | Records | Resolution rows | Skipped/Ambiguous | Excluded records |",
+        "| --- | --- | --- | --- | ---: | ---: | ---: | ---: |",
     ]
     for result in results:
         lines.append(
@@ -278,6 +325,7 @@ def write_reports(results: list[CheckResult]) -> None:
                     str(result.output_records),
                     str(result.resolution_rows),
                     str(result.skipped_or_ambiguous),
+                    str(result.excluded_records),
                 ]
             )
             + " |"

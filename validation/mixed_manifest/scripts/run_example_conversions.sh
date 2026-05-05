@@ -172,6 +172,7 @@ for species_dir in "${SOURCE_ROOT}"/*; do
       --resolution-report "${report_dir}/mixed_manifest_plink2_resolution.csv" \
       --from-format AB \
       --to-format "${TO_FORMAT}" \
+      --on-unconvertible-marker keep \
       --out "${out_dir}/mixed_manifest_plink2_plus" \
       "${overwrite_args[@]}"
   done

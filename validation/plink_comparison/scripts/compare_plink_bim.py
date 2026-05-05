@@ -9,6 +9,34 @@ from pathlib import Path
 
 
 COMPLEMENT = str.maketrans("ACGTacgt", "TGCAtgca")
+STATUS_DEFINITIONS = {
+    "exact": "The allele pair is identical in both files, in the same allele-column order.",
+    "swapped": "The same two allele labels are present, but allele1 and allele2 are reversed.",
+    "complement": "Both allele labels in the second file are DNA complements of the first file, in the same allele-column order.",
+    "swapped_complement": "Both allele labels are DNA complements and allele1/allele2 are also reversed.",
+    "mismatch": "The allele labels are not explained by exact, swapped, complement, or swapped-complement relationships.",
+    "missing_from_genotype_converter_plus": "The marker is present in Mike's PLUS file but absent from genotype_converter PLUS.",
+    "extra_in_genotype_converter_plus": "The marker is present in genotype_converter PLUS but absent from Mike's PLUS file.",
+}
+CSV_FIELD_MAP = [
+    ("marker_name", "marker_name"),
+    ("status", "status"),
+    ("mike_vs_original", "mike_plus_vs_mike_top"),
+    ("genotype_converter_vs_original", "genotype_converter_plus_vs_mike_top"),
+    ("original_chrom", "mike_top_chrom"),
+    ("original_position", "mike_top_position"),
+    ("original_allele1", "mike_top_allele1"),
+    ("original_allele2", "mike_top_allele2"),
+    ("expected_chrom", "mike_plus_chrom"),
+    ("expected_position", "mike_plus_position"),
+    ("expected_allele1", "mike_plus_allele1"),
+    ("expected_allele2", "mike_plus_allele2"),
+    ("actual_chrom", "genotype_converter_plus_chrom"),
+    ("actual_position", "genotype_converter_plus_position"),
+    ("actual_allele1", "genotype_converter_plus_allele1"),
+    ("actual_allele2", "genotype_converter_plus_allele2"),
+    ("position_status", "position_status"),
+]
 
 
 @dataclass(frozen=True)
@@ -59,14 +87,14 @@ def classify(source: BimRow, target: BimRow) -> str:
 
 
 def compare(
-    expected_path: Path,
-    actual_path: Path,
+    mike_plus_path: Path,
+    genotype_converter_plus_path: Path,
     *,
-    original_path: Path | None = None,
+    mike_top_path: Path | None = None,
 ) -> list[dict[str, str]]:
-    expected = read_bim(expected_path)
-    actual = read_bim(actual_path)
-    original = read_bim(original_path) if original_path else {}
+    expected = read_bim(mike_plus_path)
+    actual = read_bim(genotype_converter_plus_path)
+    original = read_bim(mike_top_path) if mike_top_path else {}
     rows: list[dict[str, str]] = []
     for marker in expected:
         expected_row = expected[marker]
@@ -75,9 +103,9 @@ def compare(
         if actual_row is None:
             rows.append({
                 "marker_name": marker,
-                "status": "missing_in_actual",
+                "status": "missing_from_genotype_converter_plus",
                 "mike_vs_original": classify(original_row, expected_row) if original_row else "",
-                "ours_vs_original": "",
+                "genotype_converter_vs_original": "",
                 "expected_chrom": expected_row.chrom,
                 "expected_position": expected_row.pos,
                 "expected_allele1": expected_row.allele1,
@@ -102,7 +130,7 @@ def compare(
             "marker_name": marker,
             "status": classify(expected_row, actual_row),
             "mike_vs_original": classify(original_row, expected_row) if original_row else "",
-            "ours_vs_original": classify(original_row, actual_row) if original_row else "",
+            "genotype_converter_vs_original": classify(original_row, actual_row) if original_row else "",
             "original_chrom": original_row.chrom if original_row else "",
             "original_position": original_row.pos if original_row else "",
             "original_allele1": original_row.allele1 if original_row else "",
@@ -121,9 +149,9 @@ def compare(
         actual_row = actual[marker]
         rows.append({
             "marker_name": marker,
-            "status": "extra_in_actual",
+            "status": "extra_in_genotype_converter_plus",
             "mike_vs_original": "",
-            "ours_vs_original": classify(original[marker], actual_row) if marker in original else "",
+            "genotype_converter_vs_original": classify(original[marker], actual_row) if marker in original else "",
             "original_chrom": original[marker].chrom if marker in original else "",
             "original_position": original[marker].pos if marker in original else "",
             "original_allele1": original[marker].allele1 if marker in original else "",
@@ -145,22 +173,18 @@ def write_reports(rows: list[dict[str, str]], report_prefix: Path) -> None:
     report_prefix.parent.mkdir(parents=True, exist_ok=True)
     csv_path = report_prefix.with_suffix(".csv")
     md_path = report_prefix.with_suffix(".md")
-    fieldnames = [
-        "marker_name", "status", "mike_vs_original", "ours_vs_original",
-        "original_chrom", "original_position", "original_allele1",
-        "original_allele2", "expected_chrom", "expected_position",
-        "expected_allele1", "expected_allele2", "actual_chrom",
-        "actual_position", "actual_allele1", "actual_allele2",
-        "position_status",
-    ]
+    fieldnames = [output_name for _input_name, output_name in CSV_FIELD_MAP]
     with csv_path.open("w", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
-        writer.writerows(rows)
+        for row in rows:
+            writer.writerow(
+                {output_name: row.get(input_name, "") for input_name, output_name in CSV_FIELD_MAP}
+            )
 
     counts = Counter(row["status"] for row in rows)
     transition_counts = Counter(
-        (row["mike_vs_original"], row["ours_vs_original"], row["status"])
+        (row["mike_vs_original"], row["genotype_converter_vs_original"], row["status"])
         for row in rows
     )
     position_differences = sum(1 for row in rows if row["position_status"] == "different")
@@ -175,20 +199,31 @@ def write_reports(rows: list[dict[str, str]], report_prefix: Path) -> None:
     ]
     for status, count in sorted(counts.items()):
         lines.append(f"| {status} | {count} |")
-    if any(row["mike_vs_original"] or row["ours_vs_original"] for row in rows):
+    lines.extend([
+        "",
+        "## Status Definitions",
+        "",
+        "| Status | Meaning |",
+        "| --- | --- |",
+    ])
+    for status in sorted(counts):
+        lines.append(f"| {status} | {STATUS_DEFINITIONS.get(status, '')} |")
+    if any(row["mike_vs_original"] or row["genotype_converter_vs_original"] for row in rows):
         lines.extend([
             "",
-            "## Original-To-Converted Relationships",
+            "## Conversion Relationships",
             "",
-            "| Mike vs original | Ours vs original | Ours vs Mike | Count |",
+            "These rows compare Mike's PLUS file and genotype_converter PLUS to Mike's TOP file, then compare genotype_converter PLUS to Mike's PLUS file.",
+            "",
+            "| Mike PLUS vs Mike TOP | genotype_converter PLUS vs Mike TOP | genotype_converter PLUS vs Mike PLUS | Count |",
             "| --- | --- | --- | ---: |",
         ])
-        for (mike_status, ours_status, comparison_status), count in sorted(
+        for (mike_status, genotype_converter_status, comparison_status), count in sorted(
             transition_counts.items(),
             key=lambda item: (-item[1], item[0]),
         ):
             lines.append(
-                f"| {mike_status} | {ours_status} | {comparison_status} | {count} |"
+                f"| {mike_status} | {genotype_converter_status} | {comparison_status} | {count} |"
             )
     mismatch_examples = [
         row for row in rows
@@ -200,7 +235,7 @@ def write_reports(rows: list[dict[str, str]], report_prefix: Path) -> None:
             "",
             "## Review Examples",
             "",
-            "| Marker | Status | Original | Mike expected | Ours | Position |",
+            "| Marker | Status | Mike TOP | Mike PLUS | genotype_converter PLUS | Position |",
             "| --- | --- | --- | --- | --- | --- |",
         ])
         for row in mismatch_examples:
@@ -226,21 +261,52 @@ def write_reports(rows: list[dict[str, str]], report_prefix: Path) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Compare expected and actual PLINK BIM files.")
-    parser.add_argument("--expected", required=True, type=Path, help="Expected converted .bim")
-    parser.add_argument("--actual", required=True, type=Path, help="Actual converted .bim")
-    parser.add_argument("--original", required=False, type=Path, help="Original pre-conversion .bim")
+    parser = argparse.ArgumentParser(
+        description=(
+            "Compare Mike PLUS and genotype_converter PLUS PLINK BIM files and write reports. "
+            "Differences are reported, not treated as command failure by default."
+        )
+    )
+    parser.add_argument("--mike-plus", dest="mike_plus", type=Path, help="Mike PLUS .bim")
+    parser.add_argument(
+        "--genotype-converter-plus",
+        dest="genotype_converter_plus",
+        type=Path,
+        help="genotype_converter PLUS .bim",
+    )
+    parser.add_argument("--mike-top", dest="mike_top", type=Path, help="Mike TOP .bim")
+    parser.add_argument("--expected", dest="mike_plus", type=Path, help=argparse.SUPPRESS)
+    parser.add_argument(
+        "--actual",
+        dest="genotype_converter_plus",
+        type=Path,
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument("--original", dest="mike_top", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--report-prefix", required=True, type=Path, help="Output report prefix")
+    parser.add_argument(
+        "--fail-on-differences",
+        action="store_true",
+        help="Return exit code 1 when non-exact differences are found.",
+    )
     args = parser.parse_args()
+    if args.mike_plus is None or args.genotype_converter_plus is None:
+        parser.error("--mike-plus and --genotype-converter-plus are required")
 
-    rows = compare(args.expected, args.actual, original_path=args.original)
+    rows = compare(
+        args.mike_plus,
+        args.genotype_converter_plus,
+        mike_top_path=args.mike_top,
+    )
     write_reports(rows, args.report_prefix)
     failing = [
         row for row in rows
         if row["status"] not in {"exact", "swapped"}
         or row["position_status"] == "different"
     ]
-    return 1 if failing else 0
+    if args.fail_on_differences and failing:
+        return 1
+    return 0
 
 
 if __name__ == "__main__":

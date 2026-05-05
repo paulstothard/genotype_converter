@@ -115,8 +115,9 @@ sources/<species>/genotypes/synthetic_mixed_manifest/
 `marker_selection.csv` records why each marker was selected, including whether
 it is unique to one manifest or shared across manifests. The PLINK examples are
 for this converter's metadata rewrite tests: `.bim` and `.pvar` contain real
-selected marker IDs, while `.bed` and `.pgen` are small placeholder genotype
-matrices because the converter copies those files unchanged.
+selected marker IDs. The `.bed` file is a valid small PLINK 1 genotype matrix
+with missing calls, while `.pgen` is a placeholder used only for metadata
+rewrite paths that do not require PLINK 2 to filter variants.
 
 The Illumina/GSGT and Affymetrix/Axiom files are real vendor genotype formats
 seen in the older `snp_conversion` test fixtures. They are generated here to
@@ -126,9 +127,10 @@ above.
 ## Download Reference Genomes
 
 The helper script downloads NCBI RefSeq genome FASTA files and filters them to
-assembled molecules only. That keeps chromosomes and assembled sex chromosomes
-where they are part of the assembly, while excluding unplaced and unlocalized
-contigs.
+the sequences listed in the NCBI assembly report as assembled molecules,
+unlocalized scaffolds, or unplaced scaffolds. That keeps chromosomes, assembled
+sex chromosomes where they are part of the assembly, and unassigned contigs
+that can matter when comparing against older conversion outputs.
 
 ```bash
 conda activate genotype-converter-env
@@ -194,6 +196,10 @@ each species/reference assembly. The check script writes:
 reports/example_conversion_check.csv
 reports/example_conversion_check.md
 ```
+
+The PLINK 2 synthetic example uses `--on-unconvertible-marker keep` because its
+`.pgen` file is a lightweight metadata placeholder. Real PLINK 2 files should
+use the normal default `exclude` policy when PLINK 2 is installed.
 
 For one manual CSV conversion:
 
