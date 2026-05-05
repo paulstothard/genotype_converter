@@ -15,26 +15,26 @@ STATUS_DEFINITIONS = {
     "complement": "Both allele labels in the second file are DNA complements of the first file, in the same allele-column order.",
     "swapped_complement": "Both allele labels are DNA complements and allele1/allele2 are also reversed.",
     "mismatch": "The allele labels are not explained by exact, swapped, complement, or swapped-complement relationships.",
-    "missing_from_genotype_converter_plus": "The marker is present in Mike's PLUS file but absent from genotype_converter PLUS.",
-    "extra_in_genotype_converter_plus": "The marker is present in genotype_converter PLUS but absent from Mike's PLUS file.",
+    "missing_from_genotype_converter_plus": "The marker is present in the collaborator PLUS file but absent from genotype_converter PLUS.",
+    "extra_in_genotype_converter_plus": "The marker is present in genotype_converter PLUS but absent from the collaborator PLUS file.",
 }
 CSV_FIELD_MAP = [
     ("marker_name", "marker_name"),
     ("status", "status"),
-    ("mike_vs_original", "mike_plus_vs_mike_top"),
-    ("genotype_converter_vs_original", "genotype_converter_plus_vs_mike_top"),
-    ("original_chrom", "mike_top_chrom"),
-    ("original_position", "mike_top_position"),
-    ("original_allele1", "mike_top_allele1"),
-    ("original_allele2", "mike_top_allele2"),
-    ("expected_chrom", "mike_plus_chrom"),
-    ("expected_position", "mike_plus_position"),
-    ("expected_allele1", "mike_plus_allele1"),
-    ("expected_allele2", "mike_plus_allele2"),
-    ("actual_chrom", "genotype_converter_plus_chrom"),
-    ("actual_position", "genotype_converter_plus_position"),
-    ("actual_allele1", "genotype_converter_plus_allele1"),
-    ("actual_allele2", "genotype_converter_plus_allele2"),
+    ("collaborator_plus_vs_top", "collaborator_plus_vs_top"),
+    ("genotype_converter_plus_vs_top", "genotype_converter_plus_vs_collaborator_top"),
+    ("collaborator_top_chrom", "collaborator_top_chrom"),
+    ("collaborator_top_position", "collaborator_top_position"),
+    ("collaborator_top_allele1", "collaborator_top_allele1"),
+    ("collaborator_top_allele2", "collaborator_top_allele2"),
+    ("collaborator_plus_chrom", "collaborator_plus_chrom"),
+    ("collaborator_plus_position", "collaborator_plus_position"),
+    ("collaborator_plus_allele1", "collaborator_plus_allele1"),
+    ("collaborator_plus_allele2", "collaborator_plus_allele2"),
+    ("genotype_converter_plus_chrom", "genotype_converter_plus_chrom"),
+    ("genotype_converter_plus_position", "genotype_converter_plus_position"),
+    ("genotype_converter_plus_allele1", "genotype_converter_plus_allele1"),
+    ("genotype_converter_plus_allele2", "genotype_converter_plus_allele2"),
     ("position_status", "position_status"),
 ]
 
@@ -87,83 +87,83 @@ def classify(source: BimRow, target: BimRow) -> str:
 
 
 def compare(
-    mike_plus_path: Path,
+    collaborator_plus_path: Path,
     genotype_converter_plus_path: Path,
     *,
-    mike_top_path: Path | None = None,
+    collaborator_top_path: Path | None = None,
 ) -> list[dict[str, str]]:
-    expected = read_bim(mike_plus_path)
-    actual = read_bim(genotype_converter_plus_path)
-    original = read_bim(mike_top_path) if mike_top_path else {}
+    collaborator_plus = read_bim(collaborator_plus_path)
+    genotype_converter_plus = read_bim(genotype_converter_plus_path)
+    collaborator_top = read_bim(collaborator_top_path) if collaborator_top_path else {}
     rows: list[dict[str, str]] = []
-    for marker in expected:
-        expected_row = expected[marker]
-        actual_row = actual.get(marker)
-        original_row = original.get(marker)
-        if actual_row is None:
+    for marker in collaborator_plus:
+        collaborator_plus_row = collaborator_plus[marker]
+        genotype_converter_plus_row = genotype_converter_plus.get(marker)
+        collaborator_top_row = collaborator_top.get(marker)
+        if genotype_converter_plus_row is None:
             rows.append({
                 "marker_name": marker,
                 "status": "missing_from_genotype_converter_plus",
-                "mike_vs_original": classify(original_row, expected_row) if original_row else "",
-                "genotype_converter_vs_original": "",
-                "expected_chrom": expected_row.chrom,
-                "expected_position": expected_row.pos,
-                "expected_allele1": expected_row.allele1,
-                "expected_allele2": expected_row.allele2,
-                "original_chrom": original_row.chrom if original_row else "",
-                "original_position": original_row.pos if original_row else "",
-                "original_allele1": original_row.allele1 if original_row else "",
-                "original_allele2": original_row.allele2 if original_row else "",
-                "actual_chrom": "",
-                "actual_position": "",
-                "actual_allele1": "",
-                "actual_allele2": "",
+                "collaborator_plus_vs_top": classify(collaborator_top_row, collaborator_plus_row) if collaborator_top_row else "",
+                "genotype_converter_plus_vs_top": "",
+                "collaborator_plus_chrom": collaborator_plus_row.chrom,
+                "collaborator_plus_position": collaborator_plus_row.pos,
+                "collaborator_plus_allele1": collaborator_plus_row.allele1,
+                "collaborator_plus_allele2": collaborator_plus_row.allele2,
+                "collaborator_top_chrom": collaborator_top_row.chrom if collaborator_top_row else "",
+                "collaborator_top_position": collaborator_top_row.pos if collaborator_top_row else "",
+                "collaborator_top_allele1": collaborator_top_row.allele1 if collaborator_top_row else "",
+                "collaborator_top_allele2": collaborator_top_row.allele2 if collaborator_top_row else "",
+                "genotype_converter_plus_chrom": "",
+                "genotype_converter_plus_position": "",
+                "genotype_converter_plus_allele1": "",
+                "genotype_converter_plus_allele2": "",
                 "position_status": "",
             })
             continue
         position_status = (
             "same"
-            if (expected_row.chrom, expected_row.pos) == (actual_row.chrom, actual_row.pos)
+            if (collaborator_plus_row.chrom, collaborator_plus_row.pos) == (genotype_converter_plus_row.chrom, genotype_converter_plus_row.pos)
             else "different"
         )
         rows.append({
             "marker_name": marker,
-            "status": classify(expected_row, actual_row),
-            "mike_vs_original": classify(original_row, expected_row) if original_row else "",
-            "genotype_converter_vs_original": classify(original_row, actual_row) if original_row else "",
-            "original_chrom": original_row.chrom if original_row else "",
-            "original_position": original_row.pos if original_row else "",
-            "original_allele1": original_row.allele1 if original_row else "",
-            "original_allele2": original_row.allele2 if original_row else "",
-            "expected_chrom": expected_row.chrom,
-            "expected_position": expected_row.pos,
-            "expected_allele1": expected_row.allele1,
-            "expected_allele2": expected_row.allele2,
-            "actual_chrom": actual_row.chrom,
-            "actual_position": actual_row.pos,
-            "actual_allele1": actual_row.allele1,
-            "actual_allele2": actual_row.allele2,
+            "status": classify(collaborator_plus_row, genotype_converter_plus_row),
+            "collaborator_plus_vs_top": classify(collaborator_top_row, collaborator_plus_row) if collaborator_top_row else "",
+            "genotype_converter_plus_vs_top": classify(collaborator_top_row, genotype_converter_plus_row) if collaborator_top_row else "",
+            "collaborator_top_chrom": collaborator_top_row.chrom if collaborator_top_row else "",
+            "collaborator_top_position": collaborator_top_row.pos if collaborator_top_row else "",
+            "collaborator_top_allele1": collaborator_top_row.allele1 if collaborator_top_row else "",
+            "collaborator_top_allele2": collaborator_top_row.allele2 if collaborator_top_row else "",
+            "collaborator_plus_chrom": collaborator_plus_row.chrom,
+            "collaborator_plus_position": collaborator_plus_row.pos,
+            "collaborator_plus_allele1": collaborator_plus_row.allele1,
+            "collaborator_plus_allele2": collaborator_plus_row.allele2,
+            "genotype_converter_plus_chrom": genotype_converter_plus_row.chrom,
+            "genotype_converter_plus_position": genotype_converter_plus_row.pos,
+            "genotype_converter_plus_allele1": genotype_converter_plus_row.allele1,
+            "genotype_converter_plus_allele2": genotype_converter_plus_row.allele2,
             "position_status": position_status,
         })
-    for marker in actual.keys() - expected.keys():
-        actual_row = actual[marker]
+    for marker in genotype_converter_plus.keys() - collaborator_plus.keys():
+        genotype_converter_plus_row = genotype_converter_plus[marker]
         rows.append({
             "marker_name": marker,
             "status": "extra_in_genotype_converter_plus",
-            "mike_vs_original": "",
-            "genotype_converter_vs_original": classify(original[marker], actual_row) if marker in original else "",
-            "original_chrom": original[marker].chrom if marker in original else "",
-            "original_position": original[marker].pos if marker in original else "",
-            "original_allele1": original[marker].allele1 if marker in original else "",
-            "original_allele2": original[marker].allele2 if marker in original else "",
-            "expected_chrom": "",
-            "expected_position": "",
-            "expected_allele1": "",
-            "expected_allele2": "",
-            "actual_chrom": actual_row.chrom,
-            "actual_position": actual_row.pos,
-            "actual_allele1": actual_row.allele1,
-            "actual_allele2": actual_row.allele2,
+            "collaborator_plus_vs_top": "",
+            "genotype_converter_plus_vs_top": classify(collaborator_top[marker], genotype_converter_plus_row) if marker in collaborator_top else "",
+            "collaborator_top_chrom": collaborator_top[marker].chrom if marker in collaborator_top else "",
+            "collaborator_top_position": collaborator_top[marker].pos if marker in collaborator_top else "",
+            "collaborator_top_allele1": collaborator_top[marker].allele1 if marker in collaborator_top else "",
+            "collaborator_top_allele2": collaborator_top[marker].allele2 if marker in collaborator_top else "",
+            "collaborator_plus_chrom": "",
+            "collaborator_plus_position": "",
+            "collaborator_plus_allele1": "",
+            "collaborator_plus_allele2": "",
+            "genotype_converter_plus_chrom": genotype_converter_plus_row.chrom,
+            "genotype_converter_plus_position": genotype_converter_plus_row.pos,
+            "genotype_converter_plus_allele1": genotype_converter_plus_row.allele1,
+            "genotype_converter_plus_allele2": genotype_converter_plus_row.allele2,
             "position_status": "",
         })
     return rows
@@ -184,7 +184,7 @@ def write_reports(rows: list[dict[str, str]], report_prefix: Path) -> None:
 
     counts = Counter(row["status"] for row in rows)
     transition_counts = Counter(
-        (row["mike_vs_original"], row["genotype_converter_vs_original"], row["status"])
+        (row["collaborator_plus_vs_top"], row["genotype_converter_plus_vs_top"], row["status"])
         for row in rows
     )
     position_differences = sum(1 for row in rows if row["position_status"] == "different")
@@ -208,22 +208,22 @@ def write_reports(rows: list[dict[str, str]], report_prefix: Path) -> None:
     ])
     for status in sorted(counts):
         lines.append(f"| {status} | {STATUS_DEFINITIONS.get(status, '')} |")
-    if any(row["mike_vs_original"] or row["genotype_converter_vs_original"] for row in rows):
+    if any(row["collaborator_plus_vs_top"] or row["genotype_converter_plus_vs_top"] for row in rows):
         lines.extend([
             "",
             "## Conversion Relationships",
             "",
-            "These rows compare Mike's PLUS file and genotype_converter PLUS to Mike's TOP file, then compare genotype_converter PLUS to Mike's PLUS file.",
+            "These rows compare collaborator PLUS and genotype_converter PLUS to collaborator TOP, then compare genotype_converter PLUS to collaborator PLUS.",
             "",
-            "| Mike PLUS vs Mike TOP | genotype_converter PLUS vs Mike TOP | genotype_converter PLUS vs Mike PLUS | Count |",
+            "| collaborator PLUS vs TOP | genotype_converter PLUS vs TOP | genotype_converter PLUS vs collaborator PLUS | Count |",
             "| --- | --- | --- | ---: |",
         ])
-        for (mike_status, genotype_converter_status, comparison_status), count in sorted(
+        for (collaborator_status, genotype_converter_status, comparison_status), count in sorted(
             transition_counts.items(),
             key=lambda item: (-item[1], item[0]),
         ):
             lines.append(
-                f"| {mike_status} | {genotype_converter_status} | {comparison_status} | {count} |"
+                f"| {collaborator_status} | {genotype_converter_status} | {comparison_status} | {count} |"
             )
     mismatch_examples = [
         row for row in rows
@@ -235,25 +235,25 @@ def write_reports(rows: list[dict[str, str]], report_prefix: Path) -> None:
             "",
             "## Review Examples",
             "",
-            "| Marker | Status | Mike TOP | Mike PLUS | genotype_converter PLUS | Position |",
+            "| Marker | Status | collaborator TOP | collaborator PLUS | genotype_converter PLUS | Position |",
             "| --- | --- | --- | --- | --- | --- |",
         ])
         for row in mismatch_examples:
-            original = (
-                f"{row['original_chrom']}:{row['original_position']} "
-                f"{row['original_allele1']}/{row['original_allele2']}"
+            collaborator_top = (
+                f"{row['collaborator_top_chrom']}:{row['collaborator_top_position']} "
+                f"{row['collaborator_top_allele1']}/{row['collaborator_top_allele2']}"
             ).strip()
-            expected = (
-                f"{row['expected_chrom']}:{row['expected_position']} "
-                f"{row['expected_allele1']}/{row['expected_allele2']}"
+            collaborator_plus = (
+                f"{row['collaborator_plus_chrom']}:{row['collaborator_plus_position']} "
+                f"{row['collaborator_plus_allele1']}/{row['collaborator_plus_allele2']}"
             ).strip()
-            actual = (
-                f"{row['actual_chrom']}:{row['actual_position']} "
-                f"{row['actual_allele1']}/{row['actual_allele2']}"
+            genotype_converter_plus = (
+                f"{row['genotype_converter_plus_chrom']}:{row['genotype_converter_plus_position']} "
+                f"{row['genotype_converter_plus_allele1']}/{row['genotype_converter_plus_allele2']}"
             ).strip()
             lines.append(
                 f"| {row['marker_name']} | {row['status']} | "
-                f"{original} | {expected} | {actual} | {row['position_status']} |"
+                f"{collaborator_top} | {collaborator_plus} | {genotype_converter_plus} | {row['position_status']} |"
             )
     md_path.write_text("\n".join(lines) + "\n")
     print(f"Wrote {csv_path}")
@@ -263,26 +263,18 @@ def write_reports(rows: list[dict[str, str]], report_prefix: Path) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Compare Mike PLUS and genotype_converter PLUS PLINK BIM files and write reports. "
+            "Compare collaborator PLUS and genotype_converter PLUS PLINK BIM files and write reports. "
             "Differences are reported, not treated as command failure by default."
         )
     )
-    parser.add_argument("--mike-plus", dest="mike_plus", type=Path, help="Mike PLUS .bim")
+    parser.add_argument("--collaborator-plus", dest="collaborator_plus", type=Path, help="Collaborator PLUS .bim")
     parser.add_argument(
         "--genotype-converter-plus",
         dest="genotype_converter_plus",
         type=Path,
         help="genotype_converter PLUS .bim",
     )
-    parser.add_argument("--mike-top", dest="mike_top", type=Path, help="Mike TOP .bim")
-    parser.add_argument("--expected", dest="mike_plus", type=Path, help=argparse.SUPPRESS)
-    parser.add_argument(
-        "--actual",
-        dest="genotype_converter_plus",
-        type=Path,
-        help=argparse.SUPPRESS,
-    )
-    parser.add_argument("--original", dest="mike_top", type=Path, help=argparse.SUPPRESS)
+    parser.add_argument("--collaborator-top", dest="collaborator_top", type=Path, help="Collaborator TOP .bim")
     parser.add_argument("--report-prefix", required=True, type=Path, help="Output report prefix")
     parser.add_argument(
         "--fail-on-differences",
@@ -290,13 +282,13 @@ def main() -> int:
         help="Return exit code 1 when non-exact differences are found.",
     )
     args = parser.parse_args()
-    if args.mike_plus is None or args.genotype_converter_plus is None:
-        parser.error("--mike-plus and --genotype-converter-plus are required")
+    if args.collaborator_plus is None or args.genotype_converter_plus is None:
+        parser.error("--collaborator-plus and --genotype-converter-plus are required")
 
     rows = compare(
-        args.mike_plus,
+        args.collaborator_plus,
         args.genotype_converter_plus,
-        mike_top_path=args.mike_top,
+        collaborator_top_path=args.collaborator_top,
     )
     write_reports(rows, args.report_prefix)
     failing = [

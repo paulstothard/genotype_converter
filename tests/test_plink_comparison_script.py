@@ -18,9 +18,9 @@ def _load_compare_module():
 
 def test_compare_plink_bim_classifies_allele_relationships(tmp_path):
     module = _load_compare_module()
-    expected = tmp_path / "expected.bim"
-    actual = tmp_path / "actual.bim"
-    expected.write_text(
+    collaborator_plus = tmp_path / "collaborator_plus.bim"
+    genotype_converter_plus = tmp_path / "genotype_converter_plus.bim"
+    collaborator_plus.write_text(
         "\n".join(
             [
                 "1 exact 0 10 A C",
@@ -32,7 +32,7 @@ def test_compare_plink_bim_classifies_allele_relationships(tmp_path):
         )
         + "\n"
     )
-    actual.write_text(
+    genotype_converter_plus.write_text(
         "\n".join(
             [
                 "1 exact 0 10 A C",
@@ -45,7 +45,7 @@ def test_compare_plink_bim_classifies_allele_relationships(tmp_path):
         + "\n"
     )
 
-    rows = {row["marker_name"]: row for row in module.compare(expected, actual)}
+    rows = {row["marker_name"]: row for row in module.compare(collaborator_plus, genotype_converter_plus)}
 
     assert rows["exact"]["status"] == "exact"
     assert rows["swapped"]["status"] == "swapped"

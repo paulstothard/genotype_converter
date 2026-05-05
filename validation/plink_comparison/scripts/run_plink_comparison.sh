@@ -2,8 +2,8 @@
 set -euo pipefail
 
 ENV_NAME="${CONDA_ENV:-genotype-converter-env}"
-MIKE_TOP_BFILE=""
-MIKE_PLUS_BFILE=""
+COLLABORATOR_TOP_BFILE=""
+COLLABORATOR_PLUS_BFILE=""
 OUT_PREFIX=""
 REPORT_PREFIX=""
 LOOKUP=""
@@ -21,17 +21,17 @@ COMPARE_ARGS=()
 
 usage() {
   cat <<'EOF'
-Run our PLINK conversion and compare it with Mike's PLINK PLUS file.
+Run this converter and compare its PLINK output with a collaborator PLINK PLUS file.
 
 Usage:
   validation/plink_comparison/scripts/run_plink_comparison.sh [options]
 
 Required:
-  --mike-top-bfile PREFIX   Mike's TOP PLINK fileset prefix.
-  --mike-plus-bfile PREFIX  Mike's PLUS PLINK fileset prefix.
+  --collaborator-top-bfile PREFIX   Collaborator TOP PLINK fileset prefix.
+  --collaborator-plus-bfile PREFIX  Collaborator PLUS PLINK fileset prefix.
   --out-prefix PREFIX       Output prefix for this converter.
   --report-prefix PREFIX    Report prefix for comparison CSV/Markdown.
-  --from-format FORMAT      Mike TOP allele format.
+  --from-format FORMAT      Collaborator TOP allele format.
 
 Lookup source:
   --lookup PATH             Lookup CSV from build.
@@ -55,8 +55,8 @@ EOF
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --mike-top-bfile) MIKE_TOP_BFILE="$2"; shift 2 ;;
-    --mike-plus-bfile) MIKE_PLUS_BFILE="$2"; shift 2 ;;
+    --collaborator-top-bfile) COLLABORATOR_TOP_BFILE="$2"; shift 2 ;;
+    --collaborator-plus-bfile) COLLABORATOR_PLUS_BFILE="$2"; shift 2 ;;
     --out-prefix) OUT_PREFIX="$2"; shift 2 ;;
     --report-prefix) REPORT_PREFIX="$2"; shift 2 ;;
     --lookup) LOOKUP="$2"; shift 2 ;;
@@ -77,7 +77,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-for value_name in MIKE_TOP_BFILE MIKE_PLUS_BFILE OUT_PREFIX REPORT_PREFIX FROM_FORMAT; do
+for value_name in COLLABORATOR_TOP_BFILE COLLABORATOR_PLUS_BFILE OUT_PREFIX REPORT_PREFIX FROM_FORMAT; do
   if [[ -z "${!value_name}" ]]; then
     echo "Missing required option for ${value_name}" >&2
     usage >&2
@@ -102,7 +102,7 @@ fi
 mkdir -p "$(dirname "${OUT_PREFIX}")" "$(dirname "${REPORT_PREFIX}")"
 
 conda run -n "${ENV_NAME}" genotype-converter convert-plink \
-  --bfile "${MIKE_TOP_BFILE}" \
+  --bfile "${COLLABORATOR_TOP_BFILE}" \
   "${lookup_args[@]}" \
   --from-format "${FROM_FORMAT}" \
   --to-format "${TO_FORMAT}" \
@@ -112,8 +112,8 @@ conda run -n "${ENV_NAME}" genotype-converter convert-plink \
   --overwrite
 
 conda run -n "${ENV_NAME}" python validation/plink_comparison/scripts/compare_plink_bim.py \
-  --mike-top "${MIKE_TOP_BFILE}.bim" \
-  --mike-plus "${MIKE_PLUS_BFILE}.bim" \
+  --collaborator-top "${COLLABORATOR_TOP_BFILE}.bim" \
+  --collaborator-plus "${COLLABORATOR_PLUS_BFILE}.bim" \
   --genotype-converter-plus "${OUT_PREFIX}.bim" \
   --report-prefix "${REPORT_PREFIX}" \
   "${COMPARE_ARGS[@]}"
