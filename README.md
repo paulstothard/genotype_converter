@@ -329,21 +329,46 @@ without writing a filtered p-file.
 
 ### Optional SQLite database
 
-The lookup CSV workflow remains the main conversion path. For projects with many
-species, assemblies, or manifests, lookup files can also be imported into an
-optional SQLite database for inspection and database-backed conversion.
-SQLite support uses Python's standard library; no extra package is required. See
-[SQLite Conversion Database](docs/database.md) for schema details.
+The lookup CSV workflow is the simplest path when a genotype file comes from one
+known manifest/reference pair. A lookup CSV is the `*.lookup.csv` file written by
+`genotype-converter build`; `--lookup` points directly to that one file.
+
+Use the optional SQLite database when you have many manifests, many reference
+assemblies, or genotype files that may contain markers from more than one
+manifest. SQLite support uses Python's standard library; no extra package is
+required. See [SQLite Conversion Database](docs/database.md) for schema details.
+
+For a collection of manifests and references, arrange source files like this:
+
+```
+database_sources/
+  bos_taurus/
+    manifests/
+      bovinehd_manifest_b.csv
+      another_panel.csv
+    references/
+      ARS_UCD_v2_0/
+        ARS_UCD_v2_0.fa
+      UMD3_1/
+        UMD3_1.fa
+```
+
+Manifests are independent of reference genomes. The database builder generates
+conversion information for every manifest/reference pair in a species. Each
+reference assembly folder should contain exactly one FASTA file.
 
 ```bash
 genotype-converter db init --database genotype_converter.sqlite
 
-genotype-converter db import-lookup \
+genotype-converter db discover-sources \
+  --source-root database_sources \
+  --format table
+
+genotype-converter db build \
+  --source-root database_sources \
   --database genotype_converter.sqlite \
-  --lookup output/cattle/genome/manifest.genome.lookup.csv \
-  --species bos_taurus \
-  --assembly ARS_UCD_v2_0 \
-  --manifest-name bovinehd_manifest_b
+  --build-outdir database_build \
+  --workers 1
 
 genotype-converter db marker \
   --database genotype_converter.sqlite \
@@ -353,12 +378,22 @@ genotype-converter db marker \
   --format table
 ```
 
-The database tracks manifest identity with each imported lookup source, so the
-same marker name can appear in multiple manifests without being merged into a
-single rule.
+You can also import an existing lookup CSV that was built separately:
 
-CSV genotype conversion can read from the database when the manifest context is
-specified explicitly:
+```bash
+genotype-converter db import-lookup \
+  --database genotype_converter.sqlite \
+  --lookup output/cattle/genome/manifest.genome.lookup.csv \
+  --species bos_taurus \
+  --assembly ARS_UCD_v2_0 \
+  --manifest-name bovinehd_manifest_b
+```
+
+The database tracks manifest identity with each lookup source, so the same
+marker name can appear in multiple manifests without being merged into a single
+rule.
+
+Database-backed CSV conversion can use one explicit manifest context:
 
 ```bash
 genotype-converter convert \
@@ -372,7 +407,37 @@ genotype-converter convert \
   --output converted.csv
 ```
 
-PLINK commands can also use the database with the same explicit context:
+If `--manifest-name` is omitted, the converter infers one manifest source for
+the whole input by choosing the imported source that matches the most marker IDs
+for the requested species and assembly. It fails instead of guessing if no source
+matches or if two sources tie. Use `--manifest-name` when you know the panel or
+when inference reports ambiguity.
+
+For genotype files that intentionally combine markers from multiple manifests,
+use `--resolve-mixed-manifests`. That mode resolves rules per marker and writes a
+marker-resolution report:
+
+```bash
+genotype-converter convert \
+  --genotypes mixed_panel.csv \
+  --database genotype_converter.sqlite \
+  --species bos_taurus \
+  --assembly ARS_UCD_v2_0 \
+  --resolve-mixed-manifests \
+  --resolution-report mixed_panel.resolution.csv \
+  --from-format TOP \
+  --to-format PLUS \
+  --output mixed_panel_plus.csv
+```
+
+Conflicting duplicate marker rules fail by default unless local marker context
+identifies one manifest clearly. Use `--on-ambiguous-marker skip` to continue
+without selecting a rule for unresolved markers. `--on-unconvertible-marker`
+then controls whether those markers are excluded, fail conversion, or are kept
+unchanged.
+
+PLINK commands can use the database with the same explicit, inferred, or
+mixed-manifest context:
 
 ```bash
 genotype-converter convert-plink \
@@ -386,7 +451,7 @@ genotype-converter convert-plink \
   --out mydata_plus
 ```
 
-The same database options work in batch mode. For example:
+The same database options work in batch mode:
 
 ```bash
 genotype-converter convert-pfile \
@@ -401,19 +466,6 @@ genotype-converter convert-pfile \
   --outdir converted_pfiles/
 ```
 
-If `--manifest-name` is omitted, the converter infers the manifest from the
-input marker IDs by choosing the imported source that matches the most markers
-for the requested species and assembly. It fails instead of guessing if no
-source matches or if two sources tie. Use `--manifest-name` when you know the
-panel or when inference reports ambiguity.
-
-For genotype files that intentionally combine markers from multiple manifests,
-use `--resolve-mixed-manifests`. That mode resolves rules per marker and writes
-a marker-resolution report. Conflicting duplicate marker rules fail by default
-unless local marker context identifies one manifest clearly; use
-`--on-ambiguous-marker skip` to continue without selecting a rule for unresolved
-markers. `--on-unconvertible-marker` then controls whether those markers are
-excluded, fail conversion, or are kept unchanged.
 See `examples/mixed_manifests/` for a small runnable mixed-manifest example.
 
 If a single imported lookup source contains the same marker ID more than once,
@@ -433,30 +485,6 @@ genotype-converter db vacuum --database genotype_converter.sqlite
 
 Use `db import-lookup --replace-context` or `db build --replace-context` when
 refreshing a manifest/assembly source after rebuilding lookup files.
-
-To inspect a proposed source folder without running a build:
-
-```bash
-genotype-converter db discover-sources \
-  --source-root database_sources \
-  --format table
-```
-
-To build and import a source folder:
-
-```bash
-genotype-converter db build \
-  --source-root database_sources \
-  --database genotype_converter.sqlite \
-  --build-outdir database_build \
-  --workers 1
-```
-
-Arrange database sources as `database_sources/<species>/manifests/` plus
-`database_sources/<species>/references/<assembly>/`. Manifests are independent
-of reference genomes; the database builder generates conversion information for
-every manifest/reference pair in a species. Each reference assembly folder
-should contain exactly one FASTA file.
 
 ---
 
