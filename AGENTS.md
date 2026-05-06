@@ -36,6 +36,18 @@
 
 ## Genotype Conversion Policy
 
+- A lookup CSV is the `*.lookup.csv` output from one `build` run for one
+  manifest/reference pair. `--lookup` points directly to that single file.
+- SQLite database mode is for many manifests, many assemblies, or
+  mixed-manifest genotype inputs. Keep lookup CSV workflows supported; the
+  database must remain optional.
+- Database source folders use `database_sources/<species>/manifests/` and
+  `database_sources/<species>/references/<assembly>/`. Manifests are
+  independent of reference genomes; the database builder pairs every manifest
+  with every reference assembly for that species.
+- The same marker name can appear in multiple manifests. Do not collapse rules
+  across manifest/source contexts, and keep mixed-manifest resolution
+  conservative and reportable.
 - `convert`, `convert-plink`, and `convert-pfile` all use
   `--on-unconvertible-marker exclude|fail|keep`.
 - The default is `exclude` for text formats and PLINK formats.
@@ -55,6 +67,24 @@
   `variants_excluded`.
 - `keep` is for audit/debugging runs where unresolved allele values should be
   left unchanged. `fail` is for strict checking after writing the marker report.
+- The conda environment installs PLINK 1, not PLINK 2. `convert-pfile` should
+  fail clearly when PLINK2 is needed for filtering and cannot be found.
+
+## Documentation Hygiene
+
+- Keep `README.md`, `docs/database.md`, `docs/genotype-formats.md`, and
+  `docs/development-plan.md` aligned when behavior changes.
+- The README should keep two distinct end-to-end examples: one for the single
+  lookup CSV workflow and one for the SQLite database workflow.
+- User-facing docs should explain workflows in terms of user decisions and
+  inputs. Do not include internal slogans, conversation artifacts, or
+  collaborator-specific names/details in tracked docs or helper scripts.
+- Do not add performance/runtime tables unless they come from a reproducible
+  benchmark or recorded validation run. Use qualitative memory and worker
+  guidance instead.
+- `docs/development-plan.md` records repo-level status and future work. Remove
+  or update items when they are implemented so it does not become a stale TODO
+  list.
 
 ## Probe-Adjacent SNP Positioning
 
