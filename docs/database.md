@@ -48,10 +48,12 @@ names are skipped and recorded here for later inspection.
 ## Commands
 
 ```bash
+# Create an empty database once.
 genotype-converter db init --database genotype_converter.sqlite
 ```
 
 ```bash
+# Import one lookup CSV that was already produced by genotype-converter build.
 genotype-converter db import-lookup \
   --database genotype_converter.sqlite \
   --lookup output/cattle/genome/manifest.genome.lookup.csv \
@@ -66,6 +68,7 @@ even if the lookup checksum changed. Use plain `--replace` only when refreshing
 an import with the same lookup checksum.
 
 ```bash
+# Inspect conversion rules for one marker.
 genotype-converter db marker \
   --database genotype_converter.sqlite \
   --species bos_taurus \
@@ -81,12 +84,14 @@ genotype-converter db marker \
 Summarize a database:
 
 ```bash
+# Summarize sources, markers, and warnings.
 genotype-converter db stats --database genotype_converter.sqlite
 ```
 
 Show one lookup source:
 
 ```bash
+# Show metadata and counts for one imported source.
 genotype-converter db source \
   --database genotype_converter.sqlite \
   --source-id 12
@@ -95,12 +100,14 @@ genotype-converter db source \
 List import warnings, such as skipped conflicting duplicate marker names:
 
 ```bash
+# List import warnings, such as skipped conflicting duplicate marker names.
 genotype-converter db warnings --database genotype_converter.sqlite
 ```
 
 Report marker names that occur in more than one imported source:
 
 ```bash
+# Find marker names that occur in more than one imported source.
 genotype-converter db duplicates \
   --database genotype_converter.sqlite \
   --species bos_taurus \
@@ -111,6 +118,7 @@ genotype-converter db duplicates \
 Report marker rules without chromosome/base coordinates:
 
 ```bash
+# Find marker rules that do not have resolved chromosome/base coordinates.
 genotype-converter db unresolved \
   --database genotype_converter.sqlite \
   --species bos_taurus \
@@ -122,12 +130,14 @@ Validate SQLite integrity, foreign keys, duplicate source contexts, duplicate
 same-source marker rules, empty sources, and import warnings:
 
 ```bash
+# Check database integrity and common source/import problems.
 genotype-converter db validate --database genotype_converter.sqlite
 ```
 
 Remove stale sources by id:
 
 ```bash
+# Remove one stale imported source by source id.
 genotype-converter db remove-source \
   --database genotype_converter.sqlite \
   --source-id 12 \
@@ -137,6 +147,7 @@ genotype-converter db remove-source \
 Or remove all sources with the same species, assembly, and manifest name:
 
 ```bash
+# Remove all stale sources for one species/assembly/manifest context.
 genotype-converter db remove-source \
   --database genotype_converter.sqlite \
   --species bos_taurus \
@@ -148,6 +159,7 @@ genotype-converter db remove-source \
 After large deletes, reclaim free space:
 
 ```bash
+# Reclaim disk space after large source removals.
 genotype-converter db vacuum --database genotype_converter.sqlite
 ```
 
@@ -157,6 +169,7 @@ Genotype conversion can use a database instead of `--lookup` when the command
 supports database mode:
 
 ```bash
+# Convert one CSV file using one known manifest/panel in the database.
 genotype-converter convert \
   --genotypes mydata.csv \
   --database genotype_converter.sqlite \
@@ -169,6 +182,7 @@ genotype-converter convert \
 ```
 
 ```bash
+# Convert one PLINK 1 binary fileset using one known manifest/panel.
 genotype-converter convert-plink \
   --bfile mydata_top \
   --database genotype_converter.sqlite \
@@ -181,6 +195,7 @@ genotype-converter convert-plink \
 ```
 
 ```bash
+# Convert one PLINK 2 p-file set using one known manifest/panel.
 genotype-converter convert-pfile \
   --pfile mydata_top \
   --database genotype_converter.sqlite \
@@ -195,6 +210,7 @@ genotype-converter convert-pfile \
 Folder conversion uses the same database context:
 
 ```bash
+# Convert every matching CSV file in a folder using the same database context.
 genotype-converter convert \
   --genotypes-dir genotype_files \
   --pattern "*.csv" \
@@ -209,6 +225,7 @@ genotype-converter convert \
 ```
 
 ```bash
+# Convert every matching PLINK 1 binary fileset in a folder.
 genotype-converter convert-plink \
   --bfile-dir plink_files \
   --pattern "*.bed" \
@@ -222,6 +239,7 @@ genotype-converter convert-plink \
 ```
 
 ```bash
+# Convert every matching PLINK 2 p-file set in a folder.
 genotype-converter convert-pfile \
   --pfile-dir pfiles \
   --pattern "*.pgen" \
@@ -243,6 +261,7 @@ best match. In those cases, rerun with an explicit `--manifest-name`.
 Example inferred conversion:
 
 ```bash
+# Infer one manifest source for the whole input file.
 genotype-converter convert \
   --genotypes mydata.csv \
   --database genotype_converter.sqlite \
@@ -258,6 +277,7 @@ For inputs that intentionally contain markers from more than one manifest, use
 mixed-manifest resolution:
 
 ```bash
+# Resolve conversion rules marker-by-marker for a mixed-manifest input.
 genotype-converter convert \
   --genotypes mydata.csv \
   --database genotype_converter.sqlite \
@@ -292,6 +312,7 @@ A tiny runnable example is provided in `examples/mixed_manifests/`.
 Source folders can be inspected without running a build:
 
 ```bash
+# Inspect a source folder without running alignment or importing anything.
 genotype-converter db discover-sources \
   --source-root database_sources \
   --format table
@@ -320,6 +341,7 @@ does not run alignment or import anything.
 The same folder layout can be built and imported:
 
 ```bash
+# Build and import every manifest/reference pair in the source folder.
 genotype-converter db build \
   --source-root database_sources \
   --database genotype_converter.sqlite \

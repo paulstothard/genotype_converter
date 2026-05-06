@@ -358,18 +358,22 @@ conversion information for every manifest/reference pair in a species. Each
 reference assembly folder should contain exactly one FASTA file.
 
 ```bash
+# 1. Create an empty database once.
 genotype-converter db init --database genotype_converter.sqlite
 
+# 2. Optional: inspect the source folder before running any alignments.
 genotype-converter db discover-sources \
   --source-root database_sources \
   --format table
 
+# 3. Build and import every manifest/reference pair in the source folder.
 genotype-converter db build \
   --source-root database_sources \
   --database genotype_converter.sqlite \
   --build-outdir database_build \
   --workers 1
 
+# 4. Optional: inspect one marker after the database has been built.
 genotype-converter db marker \
   --database genotype_converter.sqlite \
   --species bos_taurus \
@@ -381,6 +385,7 @@ genotype-converter db marker \
 You can also import an existing lookup CSV that was built separately:
 
 ```bash
+# Alternative to db build: import one existing lookup CSV.
 genotype-converter db import-lookup \
   --database genotype_converter.sqlite \
   --lookup output/cattle/genome/manifest.genome.lookup.csv \
@@ -396,6 +401,7 @@ rule.
 Database-backed CSV conversion can use one explicit manifest context:
 
 ```bash
+# Use this when the genotype file comes from a known manifest/panel.
 genotype-converter convert \
   --genotypes mydata.csv \
   --database genotype_converter.sqlite \
@@ -418,6 +424,8 @@ use `--resolve-mixed-manifests`. That mode resolves rules per marker and writes 
 marker-resolution report:
 
 ```bash
+# Use this when one genotype file intentionally contains markers
+# from more than one manifest.
 genotype-converter convert \
   --genotypes mixed_panel.csv \
   --database genotype_converter.sqlite \
@@ -440,6 +448,7 @@ PLINK commands can use the database with the same explicit, inferred, or
 mixed-manifest context:
 
 ```bash
+# Same database source selection, but for a PLINK 1 binary fileset.
 genotype-converter convert-plink \
   --bfile mydata_top \
   --database genotype_converter.sqlite \
@@ -454,6 +463,7 @@ genotype-converter convert-plink \
 The same database options work in batch mode:
 
 ```bash
+# Batch mode: convert every matching PLINK 2 p-file in a folder.
 genotype-converter convert-pfile \
   --pfile-dir pfiles/ \
   --pattern "*.pgen" \
@@ -476,10 +486,22 @@ between them safely; the import command reports the skipped marker IDs.
 Common maintenance commands:
 
 ```bash
+# Summarize sources, markers, and warnings.
 genotype-converter db stats --database genotype_converter.sqlite
+
+# Check database integrity and common source/import problems.
 genotype-converter db validate --database genotype_converter.sqlite
+
+# List import warnings, such as skipped duplicate marker rules.
 genotype-converter db warnings --database genotype_converter.sqlite
-genotype-converter db remove-source --database genotype_converter.sqlite --source-id 12 --yes
+
+# Remove one stale imported source by source id.
+genotype-converter db remove-source \
+  --database genotype_converter.sqlite \
+  --source-id 12 \
+  --yes
+
+# Reclaim disk space after large source removals.
 genotype-converter db vacuum --database genotype_converter.sqlite
 ```
 
