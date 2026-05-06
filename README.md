@@ -411,7 +411,9 @@ For genotype files that intentionally combine markers from multiple manifests,
 use `--resolve-mixed-manifests`. That mode resolves rules per marker and writes
 a marker-resolution report. Conflicting duplicate marker rules fail by default
 unless local marker context identifies one manifest clearly; use
-`--on-ambiguous-marker skip` to leave unresolved markers unchanged.
+`--on-ambiguous-marker skip` to continue without selecting a rule for unresolved
+markers. `--on-unconvertible-marker` then controls whether those markers are
+excluded, fail conversion, or are kept unchanged.
 See `examples/mixed_manifests/` for a small runnable mixed-manifest example.
 
 If a single imported lookup source contains the same marker ID more than once,

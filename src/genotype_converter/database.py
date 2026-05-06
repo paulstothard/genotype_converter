@@ -972,7 +972,9 @@ def load_mixed_lookup_table_from_database(
         more = f" and {len(ambiguous) - 10} more" if len(ambiguous) > 10 else ""
         raise ValueError(
             "Ambiguous marker rule(s) could not be resolved: "
-            f"{preview}{more}. Use --on-ambiguous-marker skip to leave them unchanged."
+            f"{preview}{more}. Use --on-ambiguous-marker skip to continue without "
+            "selecting a rule; --on-unconvertible-marker then controls whether "
+            "they are excluded, fail conversion, or are kept unchanged."
         )
     return table, resolutions
 

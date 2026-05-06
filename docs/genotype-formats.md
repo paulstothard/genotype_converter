@@ -68,7 +68,7 @@ Options:
 | `--assembly` | required with `--database` | Reference assembly name for database-backed conversion. |
 | `--manifest-name` | optional with `--database` | Manifest or panel name for database-backed conversion. If omitted, the command tries conservative marker-based inference. |
 | `--resolve-mixed-manifests` | off | Resolve database rules per marker for inputs containing markers from multiple manifests. |
-| `--on-ambiguous-marker` | `fail` | In mixed-manifest mode, either fail on unresolved conflicting rules or skip them unchanged. |
+| `--on-ambiguous-marker` | `fail` | In mixed-manifest mode, either fail on unresolved conflicting rules or continue without selecting a rule. |
 | `--resolution-report` | auto | CSV report path for mixed-manifest marker rule decisions. |
 | `--from-format` | required | Input encoding: `AB`, `TOP`, `FORWARD`, `DESIGN`, `PLUS`, or `VCF`. |
 | `--to-format` | required | Output encoding. |
@@ -374,7 +374,7 @@ Options:
 | `--assembly` | required with `--database` | Reference assembly name for database-backed conversion. |
 | `--manifest-name` | optional with `--database` | Manifest or panel name for database-backed conversion. If omitted, the command tries conservative marker-based inference. |
 | `--resolve-mixed-manifests` | off | Resolve database rules per marker for inputs containing markers from multiple manifests. |
-| `--on-ambiguous-marker` | `fail` | In mixed-manifest mode, either fail on unresolved conflicting rules or skip them unchanged. |
+| `--on-ambiguous-marker` | `fail` | In mixed-manifest mode, either fail on unresolved conflicting rules or continue without selecting a rule. |
 | `--resolution-report` | auto | CSV report path for mixed-manifest marker rule decisions. |
 | `--from-format` | required | Input `.bim` allele encoding: `AB`, `TOP`, `FORWARD`, `DESIGN`, or `PLUS`. |
 | `--to-format` | required | Output `.bim` allele encoding: `AB`, `TOP`, `FORWARD`, `DESIGN`, or `PLUS`. |
@@ -521,7 +521,7 @@ Options:
 | `--assembly` | required with `--database` | Reference assembly name for database-backed conversion. |
 | `--manifest-name` | optional with `--database` | Manifest or panel name for database-backed conversion. If omitted, the command tries conservative marker-based inference. |
 | `--resolve-mixed-manifests` | off | Resolve database rules per marker for inputs containing markers from multiple manifests. |
-| `--on-ambiguous-marker` | `fail` | In mixed-manifest mode, either fail on unresolved conflicting rules or skip them unchanged. |
+| `--on-ambiguous-marker` | `fail` | In mixed-manifest mode, either fail on unresolved conflicting rules or continue without selecting a rule. |
 | `--resolution-report` | auto | CSV report path for mixed-manifest marker rule decisions. |
 | `--from-format` | required | Input `.pvar` allele encoding: `AB`, `TOP`, `FORWARD`, `DESIGN`, or `PLUS`. |
 | `--to-format` | required | Output `.pvar` allele encoding: `AB`, `TOP`, `FORWARD`, `DESIGN`, or `PLUS`. |

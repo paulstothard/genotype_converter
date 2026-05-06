@@ -274,8 +274,11 @@ candidate rule are used directly. Duplicate identical rules are accepted and
 reported. Conflicting duplicate marker rules are resolved only when nearby input
 markers clearly support one manifest over the other. If a conflict cannot be
 resolved, the default behavior is to fail. Use `--on-ambiguous-marker skip` to
-leave unresolved markers unchanged instead. A marker-resolution CSV is written
-automatically, or can be placed explicitly with `--resolution-report`.
+continue without selecting a rule for unresolved markers. Those markers are then
+handled by `--on-unconvertible-marker`: the default `exclude` policy removes
+them from the output, while `keep` preserves the original allele values. A
+marker-resolution CSV is written automatically, or can be placed explicitly with
+`--resolution-report`.
 
 During import, duplicate marker names within the same lookup source are handled
 more strictly because there is no manifest-level context to choose from.

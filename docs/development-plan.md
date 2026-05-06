@@ -129,6 +129,12 @@ contig placements.
 - Add a short validation status note after each substantial full-panel
   validation run, including command, date, code version, reference used, and
   remaining discrepancy counts.
+- Add user-facing helpers for downloading reference genomes. The current
+  validation downloader is useful but hard-coded; a future helper should let
+  users choose species/assembly/accession, download from NCBI or another
+  supported source, keep chromosomes plus unlocalized/unplaced scaffolds by
+  default, preserve assembly reports for provenance, and write into the database
+  source-folder layout.
 - Improve batch mixed-manifest reports if real use shows that the global
   marker-resolution report is not enough for multi-file review.
 - Refine nearby-marker/window scoring only if real mixed-manifest data shows the
