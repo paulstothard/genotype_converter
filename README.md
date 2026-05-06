@@ -419,15 +419,16 @@ genotype-converter convert \
   --output converted.csv
 ```
 
-If `--manifest-name` is omitted, the converter infers one manifest source for
-the whole input by choosing the imported source that matches the most marker IDs
-for the requested species and assembly. It fails instead of guessing if no source
-matches or if two sources tie. Use `--manifest-name` when you know the panel or
-when inference reports ambiguity.
+Database-backed conversion has three manifest selection modes:
 
-For genotype files that intentionally combine markers from multiple manifests,
-use `--resolve-mixed-manifests`. That mode resolves rules per marker and writes a
-marker-resolution report:
+| Situation | Options to use | Behavior |
+|---|---|---|
+| The genotype file comes from a known panel. | `--manifest-name NAME` | Uses that one imported manifest source. |
+| The genotype file should come from one panel, but the panel name is not known. | Omit `--manifest-name` | Infers one manifest source for the whole input by choosing the imported source that matches the most marker IDs for the requested species and assembly. Fails instead of guessing if no source matches or if two sources tie. |
+| The genotype file intentionally contains markers from more than one panel. | `--resolve-mixed-manifests` | Resolves rules per marker and writes a marker-resolution report. |
+
+Use `--manifest-name` when you know the panel or when inference reports
+ambiguity. For intentionally mixed inputs, use `--resolve-mixed-manifests`:
 
 ```bash
 # Use this when one genotype file intentionally contains markers
