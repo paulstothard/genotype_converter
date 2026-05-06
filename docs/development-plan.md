@@ -23,6 +23,10 @@ The database workflow is optional. Lookup CSV workflows remain supported and
 should stay supported because they are simple, inspectable, easy to archive, and
 useful for validation against older outputs.
 
+Distribution is GitHub/source-install for now. PyPI or other package publishing
+can be revisited later if the audience grows beyond the current collaborator
+workflow.
+
 ## Database Source Layout
 
 The supported source-folder layout is:
@@ -139,8 +143,6 @@ contig placements.
   marker-resolution report is not enough for multi-file review.
 - Refine nearby-marker/window scoring only if real mixed-manifest data shows the
   current conservative heuristic is too simple.
-- Decide whether distribution should remain GitHub/source-install only or later
-  add package publishing.
 - Consider generating real tiny PLINK 2 pfiles for validation if PLINK2 becomes
   reliably available in the development environment.
 - Consider adding actual-allele genotype table output as a separate target from
