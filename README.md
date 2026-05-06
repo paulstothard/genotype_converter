@@ -95,7 +95,13 @@ genotype-converter --help
 
 ### Developer install
 
+Use this only when editing the code or running the test suite. The `-e` flag
+installs the package in editable mode, so changes under `src/` are used without
+reinstalling. The `[dev]` extra installs test tools (`pytest` and `pytest-cov`)
+in addition to the normal runtime dependencies.
+
 ```bash
+# Run inside an activated conda environment or Python virtual environment.
 pip install -e ".[dev]"
 pytest tests/ -v
 ```
@@ -510,13 +516,15 @@ refreshing a manifest/assembly source after rebuilding lookup files.
 
 ---
 
-## End-to-end example
+## End-to-end example 1: single lookup CSV
 
-This example uses the test data bundled in `tests/data/`.
+Use this workflow when a genotype file comes from one known manifest/reference
+pair. This example uses the test data bundled in `tests/data/`.
 
 ### Step 1: build the lookup table
 
 ```bash
+# Build one lookup CSV from one manifest and one reference FASTA.
 genotype-converter build \
   --manifest tests/data/manifest.csv \
   --reference tests/data/reference.fa \
@@ -565,6 +573,7 @@ SAMPLE003,G/G,C/C,A/C,G/G,C/C
 ```
 
 ```bash
+# Convert with the one lookup CSV produced in Step 1.
 genotype-converter convert \
   --genotypes mydata.csv \
   --lookup output/test/reference/manifest.reference.lookup.csv \
@@ -576,6 +585,7 @@ genotype-converter convert \
 ### Step 4: re-encode from AB notation
 
 ```bash
+# The same lookup CSV can convert other supported input encodings.
 genotype-converter convert \
   --genotypes mydata_ab.csv \
   --lookup output/test/reference/manifest.reference.lookup.csv \
@@ -595,6 +605,7 @@ SAMPLE002,BB,AB
 ### Batch CSV input
 
 ```bash
+# Convert every matching CSV file with the same lookup CSV and layout.
 genotype-converter convert \
   --genotypes-dir genotype_files/ \
   --pattern "*.csv" \
@@ -613,6 +624,7 @@ input file.
 ### Long-format input
 
 ```bash
+# Use --layout long when the input has one sample-marker genotype per row.
 genotype-converter convert \
   --genotypes mydata_long.csv \
   --lookup output/test/reference/manifest.reference.lookup.csv \
@@ -621,6 +633,89 @@ genotype-converter convert \
   --layout long \
   --output mydata_long_plus.csv
 ```
+
+## End-to-end example 2: SQLite database
+
+Use this workflow when you have multiple manifests, multiple reference
+assemblies, or genotype files that may contain markers from more than one
+manifest. This example uses the tiny source folder bundled in
+`tests/data/database_sources/`.
+
+### Step 1: inspect the source folder
+
+```bash
+# Check which species, manifests, and references would be used.
+# This does not run alignment or import anything.
+genotype-converter db discover-sources \
+  --source-root tests/data/database_sources \
+  --format table
+```
+
+### Step 2: build the database
+
+```bash
+# Create a database and build/import every manifest/reference pair.
+mkdir -p output
+
+genotype-converter db init --database output/example.sqlite
+
+genotype-converter db build \
+  --source-root tests/data/database_sources \
+  --database output/example.sqlite \
+  --build-outdir output/database_build \
+  --workers 1
+```
+
+### Step 3: inspect the database
+
+```bash
+# Summarize imported sources and marker counts.
+genotype-converter db stats --database output/example.sqlite
+
+# Inspect conversion rules for one marker in one species/assembly.
+genotype-converter db marker \
+  --database output/example.sqlite \
+  --species bos_taurus \
+  --assembly ARS_UCD_v2_0 \
+  --marker SNP1 \
+  --format table
+```
+
+### Step 4: convert with one known manifest
+
+```bash
+# Use --manifest-name when the genotype file comes from a known panel.
+genotype-converter convert \
+  --genotypes tests/data/database_sources/bos_taurus/genotypes/tiny_top_wide.csv \
+  --database output/example.sqlite \
+  --species bos_taurus \
+  --assembly ARS_UCD_v2_0 \
+  --manifest-name tiny_bovine_manifest \
+  --from-format TOP \
+  --to-format PLUS \
+  --layout wide \
+  --output output/tiny_top_wide.plus.csv
+```
+
+### Step 5: convert with manifest inference
+
+```bash
+# Omit --manifest-name only when one best manifest should be chosen
+# for the whole input file.
+genotype-converter convert \
+  --genotypes tests/data/database_sources/bos_taurus/genotypes/tiny_top_long.csv \
+  --database output/example.sqlite \
+  --species bos_taurus \
+  --assembly ARS_UCD_v2_0 \
+  --from-format TOP \
+  --to-format PLUS \
+  --layout long \
+  --output output/tiny_top_long.plus.csv
+```
+
+For genotype files that intentionally contain markers from multiple manifests,
+add `--resolve-mixed-manifests` and, if desired, `--resolution-report` so each
+marker's selected source is recorded.
 
 ---
 
@@ -669,13 +764,14 @@ genotype-converter convert \
 
 ## Performance
 
-Typical runtimes on a modern server (8+ cores):
+Runtime depends on reference genome size, panel size, storage speed, and the
+number of alignment workers. No general benchmark table is provided yet because
+the project does not currently include a reproducible benchmark suite.
 
-| Panel size | Approx. time |
-|---|---|
-| 50K SNPs (Bovine SNP50) | ~2 min |
-| 150K SNPs (Bovine HD) | ~5 min |
-| 800K SNPs (high-density panels) | ~20–30 min |
+For large mammalian references, start with `--workers 1`. Each worker loads its
+own minimap2 reference index, so increasing workers can improve throughput only
+when the machine has enough memory for the extra indexes. Use `--progress` on
+large builds to show alignment progress while the manifest is processed.
 
 ---
 
