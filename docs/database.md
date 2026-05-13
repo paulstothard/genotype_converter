@@ -5,7 +5,8 @@ supported and does not require a database.
 
 Current database support covers import, inspection, source-folder discovery,
 maintenance, validation, CSV genotype conversion, PLINK 1 conversion, PLINK 2
-conversion, and batch conversion for those same genotype layouts.
+conversion, batch conversion for those same genotype layouts, and site-only VCF
+export for one imported source.
 
 ## Install Notes
 
@@ -307,6 +308,28 @@ rows from the same source are skipped and reported by the import command.
 
 A tiny runnable example is provided in `examples/mixed_manifests/`.
 
+## Site-Only VCF Export
+
+One imported lookup source can be exported as a VCF containing nucleotide
+`REF`/`ALT` alleles and no sample genotype columns:
+
+```bash
+# Export one database source as a site-only VCF.
+genotype-converter export-vcf \
+  --database genotype_converter.sqlite \
+  --species bos_taurus \
+  --assembly ARS_UCD_v2_0 \
+  --manifest-name bovinehd_manifest_b \
+  --output bovinehd_manifest_b.ARS_UCD_v2_0.sites.vcf
+```
+
+The VCF has `CHROM`, `POS`, `ID`, `REF`, `ALT`, `QUAL`, `FILTER`, and `INFO`
+columns. It does not include `FORMAT` or sample columns, so it does not emit
+genotype indexes such as `0/1`. If both assayed alleles are non-reference, the
+ALT column can contain multiple nucleotide alleles, for example `A,G`. The
+`INFO` field includes manifest allele context such as `A_ALLELE`, `B_ALLELE`,
+`A_VCF`, `B_VCF`, and `DETERMINATION_TYPE` when available.
+
 ## Source Folder Discovery
 
 Source folders can be inspected without running a build:
@@ -335,6 +358,22 @@ database_sources/
 
 Discovery reports species, assembly, manifest files, and reference files. It
 does not run alignment or import anything.
+
+Reference FASTA files can be downloaded into this layout with the NCBI helper:
+
+```bash
+# Download one NCBI assembly into database_sources/<species>/references/<assembly>/.
+genotype-converter reference download-ncbi \
+  --species bos_taurus \
+  --assembly ARS_UCD_v2_0 \
+  --accession GCF_002263795.3 \
+  --ncbi-name ARS-UCD2.0 \
+  --source-root database_sources
+```
+
+The helper keeps assembled molecules, unlocalized scaffolds, and unplaced
+scaffolds by default, writes a combined FASTA, and preserves the assembly report
+beside the FASTA for provenance.
 
 ## Source Folder Build
 

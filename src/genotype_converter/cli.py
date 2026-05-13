@@ -24,6 +24,8 @@ from .database import (
     list_assemblies,
     list_manifests,
     list_species,
+    lookup_rows_from_database,
+    lookup_rows_from_database_source,
     load_mixed_lookup_table_from_database,
     load_lookup_table_from_database,
     load_lookup_table_from_database_source,
@@ -36,6 +38,8 @@ from .database import (
     vacuum_database,
     validate_database,
 )
+from .references import DEFAULT_SEQUENCE_ROLES, download_ncbi_reference
+from .vcf import rows_from_lookup_csv, write_site_vcf
 
 
 @click.group()
@@ -480,9 +484,11 @@ def _plink_pfile_marker_source_map(prefixes: list[Path]) -> dict[str, set[str]]:
               help="Write alignment.txt debug file")
 @click.option("--parquet/--no-parquet", default=False, show_default=True,
               help="Also write lookup.parquet (requires pyarrow)")
+@click.option("--vcf/--no-vcf", default=True, show_default=True,
+              help="Write a site-only VCF with nucleotide REF/ALT alleles")
 @click.option("--progress/--no-progress", default=True, show_default=True,
               help="Show build progress while aligning variants")
-def build_cmd(manifest, reference, outdir, species, workers, align, parquet, progress):
+def build_cmd(manifest, reference, outdir, species, workers, align, parquet, vcf, progress):
     """Align manifest variants and build conversion/position files."""
     stats = run(
         manifest_path=manifest,
@@ -492,6 +498,7 @@ def build_cmd(manifest, reference, outdir, species, workers, align, parquet, pro
         workers=workers,
         save_alignment=align,
         save_parquet=parquet,
+        save_vcf=vcf,
         progress=progress,
     )
     click.echo(
@@ -502,6 +509,121 @@ def build_cmd(manifest, reference, outdir, species, workers, align, parquet, pro
     summary_path = next((f for f in stats.output_files if f.endswith(".summary.txt")), None)
     if summary_path:
         click.echo(f"Full summary: {summary_path}")
+
+
+@main.command("export-vcf")
+@click.option("--lookup", required=False, type=click.Path(exists=True),
+              help="Lookup CSV produced by the build command")
+@click.option("--database", required=False, type=click.Path(exists=True),
+              help="SQLite conversion database")
+@click.option("--source-id", required=False, type=int,
+              help="Database lookup source id")
+@click.option("--species", required=False,
+              help="Species name for --database export")
+@click.option("--assembly", required=False,
+              help="Reference assembly name for --database export")
+@click.option("--manifest-name", required=False,
+              help="Manifest name for --database export")
+@click.option("--output", required=True,
+              help="Output site-only VCF path")
+def export_vcf_cmd(lookup, database, source_id, species, assembly, manifest_name, output):
+    """Export positioned marker rules as a site-only VCF with nucleotide alleles."""
+    _require_one_input(lookup, database, "--lookup", "--database")
+    try:
+        if lookup:
+            if source_id or species or assembly or manifest_name:
+                raise click.UsageError(
+                    "Use database selection options only with --database."
+                )
+            rows = rows_from_lookup_csv(lookup)
+            source_name = lookup
+        else:
+            if source_id is not None:
+                if species or assembly or manifest_name:
+                    raise click.UsageError(
+                        "Use either --source-id or species/assembly/manifest-name."
+                    )
+                rows = lookup_rows_from_database_source(database, source_id)
+                source_name = f"source_id:{source_id}"
+            else:
+                missing = [
+                    flag for flag, value in [
+                        ("--species", species),
+                        ("--assembly", assembly),
+                        ("--manifest-name", manifest_name),
+                    ] if not value
+                ]
+                if missing:
+                    raise click.UsageError(
+                        f"{', '.join(missing)} required with --database "
+                        "unless --source-id is used."
+                    )
+                rows = lookup_rows_from_database(
+                    database_path=database,
+                    species=species,
+                    assembly=assembly,
+                    manifest_name=manifest_name,
+                )
+                source_name = f"{species}/{assembly}/{manifest_name}"
+        stats = write_site_vcf(rows, output, source_name=source_name)
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo(
+        f"Wrote site-only VCF: {stats.output_path} "
+        f"({stats.records_written}/{stats.records_total} records; "
+        f"{stats.records_skipped} skipped)."
+    )
+
+
+@main.group("reference")
+def reference_cmd():
+    """Download and prepare reference FASTA files for database source folders."""
+
+
+@reference_cmd.command("download-ncbi")
+@click.option("--species", required=True,
+              help="Species folder name, for example bos_taurus")
+@click.option("--assembly", required=True,
+              help="Assembly folder name, for example ARS_UCD_v2_0")
+@click.option("--accession", required=True,
+              help="NCBI assembly accession, for example GCF_002263795.3")
+@click.option("--ncbi-name", required=True,
+              help="NCBI assembly name used in the FTP path, for example ARS-UCD2.0")
+@click.option("--source-root", default="database_sources", show_default=True,
+              help="Database source root to receive species/references/<assembly>")
+@click.option("--sequence-role", "sequence_roles", multiple=True,
+              default=DEFAULT_SEQUENCE_ROLES, show_default=True,
+              help="Assembly-report sequence role to retain; repeat to keep multiple roles")
+@click.option("--force/--no-force", default=False, show_default=True,
+              help="Replace an existing FASTA/report in the destination folder")
+def reference_download_ncbi_cmd(
+    species,
+    assembly,
+    accession,
+    ncbi_name,
+    source_root,
+    sequence_roles,
+    force,
+):
+    """Download an NCBI assembly FASTA and filter it by assembly-report roles."""
+    try:
+        stats = download_ncbi_reference(
+            species=species,
+            assembly=assembly,
+            accession=accession,
+            ncbi_name=ncbi_name,
+            source_root=source_root,
+            sequence_roles=sequence_roles,
+            force=force,
+        )
+    except (OSError, ValueError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    size_mib = stats.size_bytes / (1024 * 1024)
+    click.echo(
+        f"Wrote {stats.fasta_path} with {stats.records_written} sequence(s), "
+        f"{size_mib:.1f} MiB."
+    )
+    click.echo(f"Assembly report: {stats.assembly_report_path}")
 
 
 @main.group("db")

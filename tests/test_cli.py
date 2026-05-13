@@ -28,10 +28,19 @@ def test_batch_options_are_shown_in_help():
             "--resolve-mixed-manifests", "--on-ambiguous-marker",
             "--on-unconvertible-marker", "--plink2",
         ],
+        "build": [
+            "--vcf",
+        ],
+        "export-vcf": [
+            "--lookup", "--database", "--source-id", "--output",
+        ],
+        "reference download-ncbi": [
+            "--species", "--assembly", "--accession", "--ncbi-name", "--source-root",
+        ],
     }
 
     for command, flags in expected_flags.items():
-        result = runner.invoke(main, [command, "--help"])
+        result = runner.invoke(main, command.split() + ["--help"])
         assert result.exit_code == 0, result.output
         for flag in flags:
             assert flag in result.output
@@ -59,6 +68,80 @@ def test_db_options_are_shown_in_help():
         "vacuum",
     ]:
         assert command in result.output
+
+    result = runner.invoke(main, ["reference", "--help"])
+    assert result.exit_code == 0, result.output
+    assert "download-ncbi" in result.output
+
+
+def test_export_vcf_command_writes_site_only_vcf_from_lookup(pipeline_output, tmp_path):
+    output = tmp_path / "sites.vcf"
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "export-vcf",
+            "--lookup",
+            str(pipeline_output / "manifest.reference.lookup.csv"),
+            "--output",
+            str(output),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Wrote site-only VCF:" in result.output
+    lines = output.read_text().splitlines()
+    assert "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO" in lines
+    snp1 = next(line for line in lines if "\tSNP1\t" in line)
+    assert snp1.split("\t")[:5] == ["1", "300", "SNP1", "A", "G"]
+
+
+def test_export_vcf_command_writes_site_only_vcf_from_database(pipeline_output, tmp_path):
+    db_path = tmp_path / "rules.sqlite"
+    output = tmp_path / "sites.vcf"
+    runner = CliRunner()
+    assert runner.invoke(main, ["db", "init", "--database", str(db_path)]).exit_code == 0
+    import_result = runner.invoke(
+        main,
+        [
+            "db",
+            "import-lookup",
+            "--database",
+            str(db_path),
+            "--lookup",
+            str(pipeline_output / "manifest.reference.lookup.csv"),
+            "--species",
+            "bos_taurus",
+            "--assembly",
+            "ARS_UCD_v2_0",
+            "--manifest-name",
+            "tiny_manifest",
+        ],
+    )
+    assert import_result.exit_code == 0, import_result.output
+
+    result = runner.invoke(
+        main,
+        [
+            "export-vcf",
+            "--database",
+            str(db_path),
+            "--species",
+            "bos_taurus",
+            "--assembly",
+            "ARS_UCD_v2_0",
+            "--manifest-name",
+            "tiny_manifest",
+            "--output",
+            str(output),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    snp1 = next(
+        line for line in output.read_text().splitlines() if "\tSNP1\t" in line
+    )
+    assert snp1.split("\t")[:5] == ["1", "300", "SNP1", "A", "G"]
 
 
 def _write_plink_files(prefix, bim_rows):

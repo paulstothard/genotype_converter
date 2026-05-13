@@ -7,7 +7,7 @@ datasets between common allele encodings.
 It can be used in two ways:
 
 - Build lookup/position/conversion CSV files for one manifest and one reference
-  genome.
+  genome, plus a site-only VCF with nucleotide REF/ALT alleles.
 - Build a reusable SQLite database from folders of manifests and reference
   genomes, then convert individual genotype files or whole folders of genotype
   files.
@@ -23,16 +23,22 @@ default so genotype outputs do not keep likely-wrong allele calls.
 
 **`build`** — takes a SNP chip manifest and a reference genome FASTA, aligns
 variant flanking sequence to the reference using minimap2, and writes lookup,
-position, conversion, and wide-format files.
+position, conversion, wide-format, and site-only VCF files.
 
 **`convert`** — takes a genotype data file and the lookup table produced by `build`,
 and rewrites the allele calls from one encoding to another (for example, Illumina
 TOP format to the genomic PLUS format used by GWAS pipelines).
 
+**`export-vcf`** — writes positioned marker rules as a site-only VCF. The VCF
+contains nucleotide `REF`/`ALT` alleles and no sample genotype columns.
+
 **`db`** — creates, inspects, and builds SQLite conversion databases from local
 species folders containing manifests and reference genomes. Database-backed
 conversion can resolve mixed-manifest genotype inputs when marker names appear in
 more than one manifest.
+
+**`reference download-ncbi`** — downloads an NCBI assembly FASTA into the
+database source-folder layout and preserves the assembly report for provenance.
 
 ---
 
@@ -46,6 +52,10 @@ more than one manifest.
 | **DESIGN** | Illumina probe design strand |
 | **PLUS** | Genomic plus-strand / reference-strand encoding |
 | **VCF** | REF/ALT notation (reported as `REF` or `ALT`) |
+
+The `VCF` entry above is a genotype-cell encoding used by `convert`. The
+site-only VCF file written by `build` and `export-vcf` is different: it writes
+real nucleotide `REF` and `ALT` alleles and has no sample genotype columns.
 
 In Illumina genotyping manifests, **FORWARD** and **PLUS** are not synonyms.
 Forward/reverse is a source or dbSNP-oriented convention from the manifest,
@@ -140,6 +150,7 @@ genotype-converter build \
 | `--workers` | `1` | Parallel alignment worker processes. Each worker loads the reference index, so increase carefully for large genomes. |
 | `--align` / `--no-align` | off | Write a detailed alignment display file |
 | `--parquet` / `--no-parquet` | off | Also write `lookup.parquet` (requires pyarrow) |
+| `--vcf` / `--no-vcf` | on | Write a site-only VCF with nucleotide REF/ALT alleles and no samples. |
 | `--progress` / `--no-progress` | on | Show alignment progress while building. |
 
 For full mammalian genomes, start with `--workers 1`. Raising `--workers`
@@ -156,6 +167,7 @@ All files land in `<outdir>/<species>/<ref_stem>/`:
 | `*.position.csv` | Chromosome, 1-based position, VCF REF/ALT, and `determination_type` per variant. |
 | `*.conversion.csv` | Two rows per variant (one for allele A, one for allele B) with all format encodings. |
 | `*.wide.csv` | All of the above in one row per variant. |
+| `*.sites.vcf` | Site-only VCF with `CHROM`, `POS`, `ID`, nucleotide `REF`, nucleotide `ALT`, and no sample genotype columns. |
 | `*.summary.txt` | Marker counts by type, alignment success rate, SHA-256 checksums, per-chromosome distribution. |
 | `*.alignment.txt` | Alignment display per variant (`--align` flag). |
 | `*.lookup.parquet` | Binary version of `lookup.csv` (`--parquet` flag). |
@@ -332,6 +344,43 @@ writes `conversion_summary.csv`.
 but calls PLINK2 for exclusion. If PLINK2 is not on `PATH`, pass it with
 `--plink2 /path/to/plink2` or use `--on-unconvertible-marker fail` for a report
 without writing a filtered p-file.
+
+## export-vcf
+
+Write positioned marker rules as a site-only VCF with nucleotide `REF`/`ALT`
+alleles:
+
+```bash
+# Export from one lookup CSV produced by build.
+genotype-converter export-vcf \
+  --lookup output/cattle/genome/manifest.genome.lookup.csv \
+  --output manifest.sites.vcf
+```
+
+The output VCF has the standard site columns:
+
+```text
+#CHROM  POS  ID  REF  ALT  QUAL  FILTER  INFO
+```
+
+It does not contain `FORMAT` or sample columns, so it does not write genotype
+indexes such as `0/1`. If both assayed chip alleles are non-reference, the
+site-only VCF can write multiple nucleotide ALT alleles, for example
+`REF=C` and `ALT=A,G`. The `INFO` field includes manifest allele context such
+as `A_ALLELE`, `B_ALLELE`, `A_VCF`, `B_VCF`, and `DETERMINATION_TYPE` when
+available.
+
+You can also export one source from the SQLite database:
+
+```bash
+# Export one database source selected by species, assembly, and manifest name.
+genotype-converter export-vcf \
+  --database genotype_converter.sqlite \
+  --species bos_taurus \
+  --assembly ARS_UCD_v2_0 \
+  --manifest-name bovinehd_manifest_b \
+  --output bovinehd_manifest_b.ARS_UCD_v2_0.sites.vcf
+```
 
 ### Optional SQLite database
 
@@ -515,6 +564,33 @@ genotype-converter db vacuum --database genotype_converter.sqlite
 Use `db import-lookup --replace-context` or `db build --replace-context` when
 refreshing a manifest/assembly source after rebuilding lookup files.
 
+## Reference Downloads
+
+For database builds, reference FASTA files should live under
+`database_sources/<species>/references/<assembly>/`. The NCBI download helper
+downloads one assembly, keeps the assembly report, and filters the FASTA to
+assembled molecules plus unlocalized and unplaced scaffolds by default:
+
+```bash
+# Download one NCBI assembly into the database source-folder layout.
+genotype-converter reference download-ncbi \
+  --species bos_taurus \
+  --assembly ARS_UCD_v2_0 \
+  --accession GCF_002263795.3 \
+  --ncbi-name ARS-UCD2.0 \
+  --source-root database_sources
+```
+
+This writes:
+
+```text
+database_sources/bos_taurus/references/ARS_UCD_v2_0/ARS_UCD_v2_0.refseq.fa
+database_sources/bos_taurus/references/ARS_UCD_v2_0/ARS_UCD_v2_0.assembly_report.txt
+```
+
+Use `--sequence-role` to choose different assembly-report sequence roles and
+`--force` to replace an existing downloaded FASTA/report.
+
 ---
 
 ## End-to-end example 1: single lookup CSV
@@ -547,6 +623,7 @@ manifest.reference.lookup.csv
 manifest.reference.position.csv
 manifest.reference.conversion.csv
 manifest.reference.wide.csv
+manifest.reference.sites.vcf
 manifest.reference.summary.txt
 ```
 

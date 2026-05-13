@@ -24,7 +24,7 @@ validation/
     <panel>.<reference>.alignment.txt   # optional
     <panel>.<reference>.blast.csv       # optional
   new_pipeline/
-    generated files from genotype-converter build
+    generated files from genotype-converter build, including *.sites.vcf
   reports/
     comparison notes and diff summaries
   plink_comparison/
@@ -91,6 +91,8 @@ Start with these checks:
 1. Marker counts in the new `*.summary.txt` versus the old pipeline run.
 2. `chromosome`, `position`, `VCF_REF`, and `VCF_ALT` in position files.
 3. `AB`, `TOP`, `FORWARD`, `DESIGN`, `PLUS`, and `VCF` in conversion files.
+4. Site-only VCF output as a generated artifact. The old pipeline comparison
+   does not currently require a matching old VCF.
 4. Any markers missing from either pipeline output.
 5. Any markers with no new alignment or ambiguous-looking mappings.
 

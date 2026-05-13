@@ -20,6 +20,7 @@ from .output import (
     write_summary,
     write_wide,
 )
+from .vcf import rows_from_results, write_site_vcf
 
 
 class _Progress:
@@ -118,6 +119,7 @@ def run(
     workers: int = 1,
     save_alignment: bool = False,
     save_parquet: bool = False,
+    save_vcf: bool = True,
     progress: bool = False,
 ) -> BuildStats:
     if workers < 1:
@@ -155,6 +157,7 @@ def run(
     path_conversion = str(out_dir / f"{output_name}.conversion.csv")
     path_wide = str(out_dir / f"{output_name}.wide.csv")
     path_lookup = str(out_dir / f"{output_name}.lookup.csv")
+    path_vcf = str(out_dir / f"{output_name}.sites.vcf")
     path_summary = str(out_dir / f"{output_name}.summary.txt")
 
     _progress_message(progress, f"Writing position file: {path_position}")
@@ -166,6 +169,15 @@ def run(
     _progress_message(progress, f"Writing lookup file: {path_lookup}")
     write_lookup(results, path_lookup, info)
     output_files += [path_position, path_conversion, path_wide, path_lookup]
+
+    if save_vcf:
+        _progress_message(progress, f"Writing site-only VCF: {path_vcf}")
+        write_site_vcf(
+            rows_from_results(results),
+            path_vcf,
+            source_name=f"{species}/{ref_name}/{panel_name}",
+        )
+        output_files.append(path_vcf)
 
     if save_alignment:
         path_aln = str(out_dir / f"{output_name}.alignment.txt")

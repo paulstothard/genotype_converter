@@ -18,6 +18,10 @@ The core workflows are implemented:
   Illumina/GSGT, Affymetrix/Axiom, PLINK 1 binary, and PLINK 2 pfile inputs.
 - Exclude unconvertible markers by default and write marker-level reports.
 - Resolve mixed-manifest inputs with marker-resolution reports.
+- Write site-only VCF files with nucleotide REF/ALT alleles and no samples from
+  build outputs, lookup CSVs, or one SQLite database source.
+- Download NCBI reference assemblies into the database source-folder layout,
+  preserving assembly reports for provenance.
 
 The database workflow is optional. Lookup CSV workflows remain supported and
 should stay supported because they are simple, inspectable, easy to archive, and
@@ -133,27 +137,15 @@ contig placements.
 - Add a short validation status note after each substantial full-panel
   validation run, including command, date, code version, reference used, and
   remaining discrepancy counts.
-- Add user-facing helpers for downloading reference genomes. The current
-  validation downloader is useful but hard-coded; a future helper should let
-  users choose species/assembly/accession, download from NCBI or another
-  supported source, keep chromosomes plus unlocalized/unplaced scaffolds by
-  default, preserve assembly reports for provenance, and write into the database
-  source-folder layout.
 - Improve batch mixed-manifest reports if real use shows that the global
   marker-resolution report is not enough for multi-file review.
 - Refine nearby-marker/window scoring only if real mixed-manifest data shows the
   current conservative heuristic is too simple.
 - Consider generating real tiny PLINK 2 pfiles for validation if PLINK2 becomes
   reliably available in the development environment.
-- Consider adding actual-allele genotype table output as a separate target from
-  the current symbolic `VCF` encoding. The current `VCF` target reports alleles
-  as `REF` and `ALT`; an actual-allele output mode would write bases/allele
-  strings such as `A/G`.
-- Consider full VCF export as a distinct feature. Proper VCF output would need
-  records with `CHROM`, `POS`, `ID`, `REF`, `ALT`, `FORMAT`, and sample columns,
-  plus correct genotype indexes. Multi-ALT records are needed when both assayed
-  chip alleles are non-reference, for example `REF=C`, `ALT=A,G`, and genotypes
-  such as `1/2`.
+- Consider sample-genotype VCF export only if a workflow needs actual VCF sample
+  columns. The current VCF export is site-only because lookup rules do not by
+  themselves provide sample genotypes or genotype indexes.
 
 ## Agent Notes
 

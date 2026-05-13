@@ -41,10 +41,19 @@
 - SQLite database mode is for many manifests, many assemblies, or
   mixed-manifest genotype inputs. Keep lookup CSV workflows supported; the
   database must remain optional.
+- `build` writes a site-only `*.sites.vcf` by default. `export-vcf` can also
+  write one from a lookup CSV or one SQLite database source. This VCF has
+  nucleotide `REF`/`ALT` alleles and no `FORMAT` or sample genotype columns.
+  Do not add `0/1` genotype indexes unless a future workflow explicitly has
+  sample genotypes to encode.
 - Database source folders use `database_sources/<species>/manifests/` and
   `database_sources/<species>/references/<assembly>/`. Manifests are
   independent of reference genomes; the database builder pairs every manifest
   with every reference assembly for that species.
+- `reference download-ncbi` is the user-facing reference download helper. It
+  writes into `database_sources/<species>/references/<assembly>/`, preserves the
+  assembly report, and keeps assembled molecules plus unlocalized/unplaced
+  scaffolds by default.
 - The same marker name can appear in multiple manifests. Do not collapse rules
   across manifest/source contexts, and keep mixed-manifest resolution
   conservative and reportable.

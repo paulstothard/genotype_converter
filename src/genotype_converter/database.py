@@ -771,6 +771,38 @@ def load_lookup_table_from_database(
     return load_lookup_table_from_database_source(database_path, int(source["id"]))
 
 
+def lookup_rows_from_database(
+    database_path: str,
+    species: str,
+    assembly: str,
+    manifest_name: str,
+) -> list[dict[str, Any]]:
+    source = _single_source(database_path, species, assembly, manifest_name)
+    return lookup_rows_from_database_source(database_path, int(source["id"]))
+
+
+def lookup_rows_from_database_source(
+    database_path: str,
+    source_id: int,
+) -> list[dict[str, Any]]:
+    with connect(database_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                marker_name, alt_marker_name, chromosome, position,
+                ref_allele, alt_allele, determination_type,
+                A_in_PLUS, B_in_PLUS, A_vcf, B_vcf
+            FROM marker_rules
+            WHERE source_id = ?
+            ORDER BY id
+            """,
+            (source_id,),
+        ).fetchall()
+    if not rows:
+        raise ValueError(f"No marker rules found for lookup source id {source_id}")
+    return [dict(row) for row in rows]
+
+
 def load_lookup_table_from_database_source(
     database_path: str,
     source_id: int,

@@ -126,16 +126,30 @@ above.
 
 ## Download Reference Genomes
 
-The helper script downloads NCBI RefSeq genome FASTA files and filters them to
-the sequences listed in the NCBI assembly report as assembled molecules,
+The user-facing `genotype-converter reference download-ncbi` command can
+download one NCBI RefSeq genome FASTA at a time into the source-folder layout.
+This validation workspace also keeps a convenience script that downloads the
+current cattle and pig references listed below. Both paths filter FASTA records
+to the sequences listed in the NCBI assembly report as assembled molecules,
 unlocalized scaffolds, or unplaced scaffolds. That keeps chromosomes, assembled
-sex chromosomes where they are part of the assembly, and unassigned contigs
-that can matter when comparing against older conversion outputs.
+sex chromosomes where they are part of the assembly, and unassigned contigs that
+can matter when comparing against older conversion outputs.
 
 ```bash
 conda activate genotype-converter-env
 
 python validation/mixed_manifest/scripts/download_references.py
+```
+
+Equivalent single-reference command:
+
+```bash
+genotype-converter reference download-ncbi \
+  --species bos_taurus \
+  --assembly ARS_UCD_v2_0 \
+  --accession GCF_002263795.3 \
+  --ncbi-name ARS-UCD2.0 \
+  --source-root validation/mixed_manifest/sources
 ```
 
 The current downloads are:

@@ -14,6 +14,11 @@ This guide describes the genotype files accepted by `genotype-converter convert`
 | `PLUS` | Genomic plus-strand / reference-strand encoding. |
 | `VCF` | REF/ALT notation, reported as `REF` or `ALT`. |
 
+`VCF` in the table above is a symbolic genotype-cell encoding. It converts
+allele calls to labels such as `REF/ALT`; it does not create a `.vcf` file. To
+write positioned markers as nucleotide `REF`/`ALT` records, use the site-only
+VCF output from `build` or `genotype-converter export-vcf`.
+
 In Illumina genotyping manifests, `FORWARD` and `PLUS` are not synonyms.
 Forward/reverse is a source or dbSNP-oriented convention from the manifest,
 whereas plus/minus is the genomic reference-strand convention.
