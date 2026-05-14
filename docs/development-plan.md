@@ -127,10 +127,10 @@ Important validation paths:
 Large validation inputs, generated databases, references, reports, and converted
 outputs should remain ignored by Git.
 
-The mixed-manifest reference downloader intentionally keeps assembled molecules,
-unlocalized scaffolds, and unplaced scaffolds from NCBI RefSeq assembly reports.
-That keeps validation comparable with older outputs that may include unassigned
-contig placements.
+The user-facing NCBI reference download helper and the validation convenience
+downloader intentionally keep assembled molecules, unlocalized scaffolds, and
+unplaced scaffolds from NCBI RefSeq assembly reports. That keeps validation
+comparable with older outputs that may include unassigned contig placements.
 
 ## Remaining Work
 

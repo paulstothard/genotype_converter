@@ -133,10 +133,10 @@ different-chromosome or far-distance alignment disagreements.
 
 The build outputs include a `determination_type` column in `position.csv`,
 `wide.csv`, `lookup.csv`, and optional `lookup.parquet`. Use this column to
-filter markers for QC. In the bovine HD validation panel, the remaining nearby
-old/new position discrepancies are usually gap-adjacent: a scan after the
-probe-orientation fixes found 150 of 165 close discrepancies had a CIGAR
-insertion/deletion near the tracked assayed site in the selected alignment.
+filter markers for QC. Keep exact old/new discrepancy counts in generated
+reports rather than in this README. When reviewing nearby position differences,
+inspect CIGAR gaps and probe placement because those cases are often
+gap-adjacent.
 
 The helper script compares the current bovine HD validation files:
 

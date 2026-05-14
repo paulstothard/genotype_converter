@@ -143,10 +143,10 @@ detectable:
 - Build outputs include `determination_type` in position, wide, lookup, and
   optional Parquet outputs. Preserve this QC column when changing output
   schemas.
-- Remaining nearby old/new position discrepancies in the bovine HD validation
-  set are usually gap-adjacent. After the probe-orientation fixes, 150 of 165
-  close discrepancies had a CIGAR insertion/deletion near the tracked assayed
-  site in the selected minimap2 hit.
+- Track exact old/new validation discrepancy counts in generated validation
+  reports, not in this file. Historically, remaining nearby discrepancies have
+  often been gap-adjacent, so inspect the selected CIGAR and probe placement
+  before changing positioning logic.
 
 User-facing docs should describe this as probe-based or probe-adjacent SNP
 positioning. Avoid internal slogans or implementation jargon in user-facing

@@ -122,9 +122,11 @@ pytest tests/ -v
 pip install pyarrow
 ```
 
-### Development plan
+### Maintainer notes
 
-For planned features and design notes, see [Development Plan](docs/development-plan.md).
+For maintainer-facing status and future-work notes, see
+[Development Plan](docs/development-plan.md). This file is tracked in the
+repository and is not a release promise.
 
 ---
 
